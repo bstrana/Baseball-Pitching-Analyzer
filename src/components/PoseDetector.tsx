@@ -1734,7 +1734,17 @@ export function PoseDetector({
           }
         }}
       />
-      
+
+      {/* Hidden File Input - kept mounted regardless of load/error state so the
+          "Upload Video" fallback button works even when the camera fails to init. */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept="video/*,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.mkv,.avi,.m4v"
+        className="hidden"
+      />
+
       {/* Interactive Canvas Overlay */}
       <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-black">
         {!isLoaded ? (
@@ -2097,14 +2107,6 @@ export function PoseDetector({
 
             {/* Right: Operational Actions Row */}
             <div className="flex items-center justify-center lg:justify-end gap-1.5 w-full lg:w-auto flex-wrap lg:flex-nowrap">
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileUpload}
-                accept="video/*,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.mkv,.avi,.m4v"
-                className="hidden"
-              />
-
               {/* Record Pitch Button */}
               <button
                 onClick={isRecording ? stopRecording : startRecording}
