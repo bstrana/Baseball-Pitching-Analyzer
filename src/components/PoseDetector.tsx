@@ -165,6 +165,7 @@ export function PoseDetector({
   const rollingKinematicsRef = useRef<{ hip: number; shoulder: number; wrist: number; timestamp: number }[]>([]);
 
   // Telestrator drawing states
+  const [showDrawTools, setShowDrawTools] = useState(false);
   const [activeDrawTool, setActiveDrawTool] = useState<'none' | 'line' | 'arrow' | 'circle' | 'freehand'>('none');
   const [activeDrawColor, setActiveDrawColor] = useState<string>('#f43f5e'); // rose-500
   const [drawings, setDrawings] = useState<{
@@ -1841,13 +1842,38 @@ export function PoseDetector({
             )}
           </div>
 
-          {/* Telestrator / Drawing Tools Floating Panel */}
-          <div className="absolute left-3 top-20 sm:top-24 z-20 flex flex-row sm:flex-col items-center gap-2 p-1.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
-            {/* Header Icon (Visible on desktop) */}
-            <div className="hidden sm:flex items-center justify-center p-1 text-slate-500 border-b border-slate-800/80 pb-2 mb-0.5" title="Telestrator Tools">
-              <PenTool className="w-4 h-4 text-sky-400" />
-            </div>
+          {/* Telestrator Toggle Button - the drawing tools stay off-canvas until called on demand */}
+          <button
+            onClick={() => {
+              setShowDrawTools(prev => {
+                const next = !prev;
+                if (!next) {
+                  // Deselect any active tool when hiding the drawer so a hidden
+                  // pen/shape tool can't keep intercepting clicks on the video.
+                  setActiveDrawTool('none');
+                }
+                return next;
+              });
+              singleFrameAnalyzeRequestedRef.current = true;
+            }}
+            className={`absolute left-3 top-20 sm:top-24 z-30 p-2.5 rounded-xl border backdrop-blur-md shadow-lg transition-colors ${
+              showDrawTools
+                ? 'bg-sky-600 border-sky-500 text-white'
+                : 'bg-slate-950/90 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+            title={showDrawTools ? 'Hide drawing tools' : 'Show drawing tools (Telestrator)'}
+          >
+            <PenTool className="w-4 h-4" />
+          </button>
 
+          {/* Telestrator / Drawing Tools Panel - off-canvas by default, slides in on demand */}
+          <div
+            className={`absolute left-3 top-[4.75rem] sm:top-[5.75rem] z-20 flex flex-row sm:flex-col items-center gap-2 p-1.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all duration-200 origin-top-left ${
+              showDrawTools
+                ? 'opacity-100 translate-x-0 scale-100 pointer-events-auto'
+                : 'opacity-0 -translate-x-3 scale-95 pointer-events-none'
+            }`}
+          >
             {/* Tool Selection Group */}
             <div className="flex flex-row sm:flex-col gap-1.5">
               <button
