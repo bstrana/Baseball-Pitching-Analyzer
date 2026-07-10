@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
-import { Pitch, PitchType, StrikeZoneConfig } from './types';
+import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
 import { Activity, Crosshair, Download, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -23,6 +23,7 @@ export default function App() {
     hipShoulderSeparation: 0,
     speeds: { hip: 0, shoulder: 0, elbow: 0, wrist: 0 }
   });
+  const [liveKinematicsData, setLiveKinematicsData] = useState<KinematicFrame[]>([]);
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [showTrajectory, setShowTrajectory] = useState(true);
   const [speedGunConnected, setSpeedGunConnected] = useState(false);
@@ -242,9 +243,10 @@ export default function App() {
           <div className="flex-1 relative bg-black flex items-center justify-center p-0 lg:p-4 min-h-0">
             <div className="w-full h-full relative lg:rounded-xl overflow-hidden lg:border lg:border-slate-800 lg:shadow-2xl bg-slate-950 flex items-center justify-center">
                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40 pointer-events-none z-10"></div>
-               <PoseDetector 
-                 onMetricsUpdate={setMetrics} 
-                 showSkeleton={showSkeleton} 
+               <PoseDetector
+                 onMetricsUpdate={setMetrics}
+                 onKinematicsUpdate={setLiveKinematicsData}
+                 showSkeleton={showSkeleton}
                  showTrajectory={showTrajectory} 
                  cameraView={cameraView} 
                  strikeZoneConfig={strikeZoneConfig}
@@ -307,7 +309,11 @@ export default function App() {
                     pitchNumber={selectedPitch?.number || null}
                     pitchType={selectedPitch?.type || null}
                     velocity={selectedPitch?.velocity || null}
-                    kinematicsData={selectedPitch?.kinematicsData || []}
+                    kinematicsData={
+                      selectedPitch?.kinematicsData && selectedPitch.kinematicsData.length > 0
+                        ? selectedPitch.kinematicsData
+                        : liveKinematicsData
+                    }
                   />
                 </div>
 

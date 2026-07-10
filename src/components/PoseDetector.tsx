@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History } from 'lucide-react';
-import { Pitch, PitchType, StrikeZoneConfig, classifyPitch } from '../types';
+import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, classifyPitch } from '../types';
 
 // Required to initialize the WebGL backend
 import '@tensorflow/tfjs-backend-webgl';
@@ -27,6 +27,7 @@ export interface PoseMetrics {
 
 interface PoseDetectorProps {
   onMetricsUpdate: (metrics: PoseMetrics) => void;
+  onKinematicsUpdate?: (data: KinematicFrame[]) => void;
   showSkeleton: boolean;
   showTrajectory: boolean;
   cameraView: 'side' | 'front' | 'back';
@@ -57,9 +58,10 @@ interface PoseDetectorProps {
   onConfigChange?: (config: StrikeZoneConfig) => void;
 }
 
-export function PoseDetector({ 
-  onMetricsUpdate, 
-  showSkeleton, 
+export function PoseDetector({
+  onMetricsUpdate,
+  onKinematicsUpdate,
+  showSkeleton,
   showTrajectory, 
   cameraView,
   strikeZoneConfig,
@@ -115,6 +117,8 @@ export function PoseDetector({
   const onAddPitchRef = useRef(onAddPitch);
   const appModeRef = useRef(appMode);
   const onConfigChangeRef = useRef(onConfigChange);
+  const onKinematicsUpdateRef = useRef(onKinematicsUpdate);
+  const kinematicsEmitCounterRef = useRef(0);
   const defaultVisibleMarkers = {
     head: true,
     arms: true,
@@ -191,6 +195,7 @@ export function PoseDetector({
     onAddPitchRef.current = onAddPitch;
     appModeRef.current = appMode;
     onConfigChangeRef.current = onConfigChange;
+    onKinematicsUpdateRef.current = onKinematicsUpdate;
     feedSourceRef.current = feedSource;
     showSkeletonRef.current = showSkeleton;
     showTrajectoryRef.current = showTrajectory;
@@ -805,6 +810,21 @@ export function PoseDetector({
             });
             if (rollingKinematicsRef.current.length > 90) {
               rollingKinematicsRef.current.shift();
+            }
+
+            // Throttle live kinematics emission (~every 6 frames) so the Kinematic
+            // Sequence chart reflects real joint speeds from the current video feed.
+            kinematicsEmitCounterRef.current += 1;
+            if (kinematicsEmitCounterRef.current >= 6 && onKinematicsUpdateRef.current) {
+              kinematicsEmitCounterRef.current = 0;
+              onKinematicsUpdateRef.current(
+                rollingKinematicsRef.current.map(p => ({
+                  time: parseFloat(((p.timestamp - now) / 1000).toFixed(2)),
+                  hip: p.hip,
+                  shoulder: p.shoulder,
+                  wrist: p.wrist
+                }))
+              );
             }
           }
         }
