@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History } from 'lucide-react';
+import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X } from 'lucide-react';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, classifyPitch } from '../types';
 
 // Required to initialize the WebGL backend
@@ -24,6 +24,15 @@ export interface PoseMetrics {
     wrist: number;
   };
 }
+
+const ZERO_METRICS: PoseMetrics = {
+  rightArmAngle: 0,
+  leftArmAngle: 0,
+  rightLegAngle: 0,
+  leftLegAngle: 0,
+  hipShoulderSeparation: 0,
+  speeds: { hip: 0, shoulder: 0, elbow: 0, wrist: 0 }
+};
 
 interface PoseDetectorProps {
   onMetricsUpdate: (metrics: PoseMetrics) => void;
@@ -151,6 +160,16 @@ export function PoseDetector({
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
 
+  // Analysis range: for uploaded/replayed video, nothing is tracked or recorded
+  // until the user marks a start/end point and presses Analyze.
+  const [rangeStart, setRangeStart] = useState<number | null>(null);
+  const [rangeEnd, setRangeEnd] = useState<number | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [hasAnalyzed, setHasAnalyzed] = useState(false);
+  const hasAnalyzedRef = useRef(false);
+  const isAnalyzingRef = useRef(false);
+
   // Recording states
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -165,6 +184,7 @@ export function PoseDetector({
   const rollingKinematicsRef = useRef<{ hip: number; shoulder: number; wrist: number; timestamp: number }[]>([]);
 
   // Telestrator drawing states
+  const [showDrawTools, setShowDrawTools] = useState(false);
   const [activeDrawTool, setActiveDrawTool] = useState<'none' | 'line' | 'arrow' | 'circle' | 'freehand'>('none');
   const [activeDrawColor, setActiveDrawColor] = useState<string>('#f43f5e'); // rose-500
   const [drawings, setDrawings] = useState<{
@@ -243,9 +263,28 @@ export function PoseDetector({
   }, [isLoaded]);
 
   // Start webcam
+  // Clear any marked analysis range/results from a previous clip. Live camera
+  // tracking is unaffected by these - they only gate uploaded/replayed video.
+  const resetAnalysisState = () => {
+    setRangeStart(null);
+    setRangeEnd(null);
+    setIsAnalyzing(false);
+    isAnalyzingRef.current = false;
+    setAnalysisProgress(0);
+    setHasAnalyzed(false);
+    hasAnalyzedRef.current = false;
+    rollingKinematicsRef.current = [];
+    lastFrameRef.current = null;
+    speedBufferRef.current = { hip: [], shoulder: [], elbow: [], wrist: [] };
+    wristTrajectory.current = [];
+    onMetricsUpdate(ZERO_METRICS);
+    onKinematicsUpdateRef.current?.([]);
+  };
+
   const startCamera = async (facing: 'user' | 'environment' = cameraFacingMode) => {
     setError(null);
     setFeedSource('camera');
+    resetAnalysisState();
     if (!videoRef.current) return;
     
     // Stop existing camera stream first if any
@@ -398,6 +437,7 @@ export function PoseDetector({
   const playRecording = (rec: { url: string; kinematicsData?: any[] }) => {
     setError(null);
     setFeedSource('upload');
+    resetAnalysisState();
     if (!videoRef.current) return;
 
     // Stop camera stream if active
@@ -412,17 +452,6 @@ export function PoseDetector({
     videoRef.current.playbackRate = playbackSpeed;
     isPausedRef.current = false;
     setIsPaused(false);
-
-    // If there is recorded kinematics for this throw, populate our rolling buffer with it!
-    if (rec.kinematicsData && rec.kinematicsData.length > 0) {
-      const nowMs = performance.now();
-      rollingKinematicsRef.current = rec.kinematicsData.map((k, i) => ({
-        hip: k.hip,
-        shoulder: k.shoulder,
-        wrist: k.wrist,
-        timestamp: nowMs - (rec.kinematicsData!.length - i) * 33 // mock original spacing
-      }));
-    }
 
     videoRef.current.play().catch(e => {
       console.log("Auto-play prevented by browser, will trigger on interaction:", e);
@@ -499,6 +528,7 @@ export function PoseDetector({
   const startVideoFromUrl = (url: string) => {
     setError(null);
     setFeedSource('upload');
+    resetAnalysisState();
     if (!videoRef.current) return;
     
     // Stop camera stream if active
@@ -519,6 +549,131 @@ export function PoseDetector({
       isPausedRef.current = true;
       setIsPaused(true);
     });
+  };
+
+  // Mark the current scrub position as the start/end of the portion to analyze
+  const handleMarkRangeStart = () => {
+    if (!videoRef.current) return;
+    const t = videoRef.current.currentTime;
+    setRangeStart(t);
+    if (rangeEnd !== null && rangeEnd <= t) setRangeEnd(null);
+    setHasAnalyzed(false);
+    hasAnalyzedRef.current = false;
+  };
+
+  const handleMarkRangeEnd = () => {
+    if (!videoRef.current) return;
+    const t = videoRef.current.currentTime;
+    setRangeEnd(t);
+    if (rangeStart !== null && rangeStart >= t) setRangeStart(null);
+    setHasAnalyzed(false);
+    hasAnalyzedRef.current = false;
+  };
+
+  const handleClearRange = () => {
+    setRangeStart(null);
+    setRangeEnd(null);
+    setHasAnalyzed(false);
+    hasAnalyzedRef.current = false;
+    setAnalysisProgress(0);
+    rollingKinematicsRef.current = [];
+    onMetricsUpdate(ZERO_METRICS);
+    onKinematicsUpdateRef.current?.([]);
+    singleFrameAnalyzeRequestedRef.current = true;
+  };
+
+  // Wait for the video to finish seeking to the time we just set, with a safety
+  // timeout in case a particular browser/codec never fires 'seeked' for a given frame.
+  const waitForSeek = (video: HTMLVideoElement) => new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      video.removeEventListener('seeked', finish);
+      resolve();
+    };
+    video.addEventListener('seeked', finish);
+    setTimeout(finish, 300);
+  });
+
+  // Offline analysis sweep: step through the marked [rangeStart, rangeEnd] range of an
+  // uploaded/replayed video, running pose detection on each sampled frame so the joint
+  // metrics and Kinematic Sequence chart reflect only that portion of the video.
+  const runAnalysis = async () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !detector) return;
+    if (rangeStart === null || rangeEnd === null || rangeEnd <= rangeStart) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    isAnalyzingRef.current = true;
+    setIsAnalyzing(true);
+    setAnalysisProgress(0);
+    hasAnalyzedRef.current = false;
+    setHasAnalyzed(false);
+
+    const wasPaused = video.paused;
+    video.pause();
+
+    // Reset tracking continuity so the sweep starts from a clean state
+    lastFrameRef.current = null;
+    speedBufferRef.current = { hip: [], shoulder: [], elbow: [], wrist: [] };
+    rollingKinematicsRef.current = [];
+    wristTrajectory.current = [];
+    kinematicsEmitCounterRef.current = 0;
+
+    const start = rangeStart;
+    const end = rangeEnd;
+    const stepSeconds = 1 / 30;
+    const totalSteps = Math.max(1, Math.round((end - start) / stepSeconds));
+
+    for (let i = 0; i <= totalSteps; i++) {
+      const t = Math.min(end, start + i * stepSeconds);
+      video.currentTime = t;
+      await waitForSeek(video);
+
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const poses = await detector.estimatePoses(video);
+      if (poses.length > 0) {
+        processPoseFrame(poses[0], ctx, t * 1000);
+      }
+
+      setAnalysisProgress(Math.round((i / totalSteps) * 100));
+    }
+
+    // Final, complete curve for the analyzed range (the throttled emission inside
+    // processPoseFrame may have skipped the last couple of sampled frames).
+    const endMs = end * 1000;
+    onKinematicsUpdateRef.current?.(
+      rollingKinematicsRef.current.map(p => ({
+        time: parseFloat(((p.timestamp - endMs) / 1000).toFixed(2)),
+        hip: p.hip,
+        shoulder: p.shoulder,
+        wrist: p.wrist
+      }))
+    );
+
+    isAnalyzingRef.current = false;
+    setIsAnalyzing(false);
+    hasAnalyzedRef.current = true;
+    setHasAnalyzed(true);
+    singleFrameAnalyzeRequestedRef.current = true;
+
+    if (!wasPaused) {
+      isPausedRef.current = false;
+      setIsPaused(false);
+      video.play().catch(() => {});
+    } else {
+      isPausedRef.current = true;
+      setIsPaused(true);
+    }
   };
 
   const togglePlaybackSpeed = () => {
@@ -586,8 +741,252 @@ export function PoseDetector({
   };
 
   // Detection loop
+  // Compute joint angles/speeds for one estimated pose, draw the skeleton overlay,
+  // and push results to parent callbacks + rolling kinematics history.
+  // `now` is the frame's timestamp in ms: wall-clock time for the live loop, or the
+  // sampled video time for the offline Analyze sweep, so speed math (dist/dt) reflects
+  // real elapsed time regardless of how fast the calling loop actually runs.
+  const processPoseFrame = (pose: poseDetection.Pose, ctx: CanvasRenderingContext2D, now: number) => {
+    const keypoints = pose.keypoints;
+
+    // Draw keypoints and skeleton
+    if (showSkeletonRef.current && appModeRef.current !== 'pitching') {
+      drawSkeleton(keypoints, ctx);
+      drawKeypoints(keypoints, ctx);
+    }
+
+    // Map keypoints by name for easier access
+    const keypointMap = new Map<string, poseDetection.Keypoint>(
+      keypoints.map(kp => [kp.name || '', kp])
+    );
+
+    const rightShoulder = keypointMap.get('right_shoulder');
+    const rightElbow = keypointMap.get('right_elbow');
+    const rightWrist = keypointMap.get('right_wrist');
+
+    const leftShoulder = keypointMap.get('left_shoulder');
+    const leftElbow = keypointMap.get('left_elbow');
+    const leftWrist = keypointMap.get('left_wrist');
+
+    let rAngle = 0;
+    let lAngle = 0;
+    let rLegAngle = 0;
+    let lLegAngle = 0;
+    let hsSeparation = 0;
+
+    if (rightShoulder && rightElbow && rightWrist) {
+      const angle = calculateAngle(rightShoulder, rightElbow, rightWrist);
+      if (angle !== null) {
+        rAngle = angle;
+        if (showSkeletonRef.current && appModeRef.current !== 'pitching' && visibleMarkersRef.current.arms) {
+          drawAngle(ctx, rightElbow, angle);
+        }
+      }
+    }
+
+    if (leftShoulder && leftElbow && leftWrist) {
+      const angle = calculateAngle(leftShoulder, leftElbow, leftWrist);
+      if (angle !== null) {
+        lAngle = angle;
+        if (showSkeletonRef.current && appModeRef.current !== 'pitching' && visibleMarkersRef.current.arms) {
+          drawAngle(ctx, leftElbow, angle);
+        }
+      }
+    }
+
+    const rightHip = keypointMap.get('right_hip');
+    const rightKnee = keypointMap.get('right_knee');
+    const rightAnkle = keypointMap.get('right_ankle');
+
+    const leftHip = keypointMap.get('left_hip');
+    const leftKnee = keypointMap.get('left_knee');
+    const leftAnkle = keypointMap.get('left_ankle');
+
+    if (rightHip && rightKnee && rightAnkle) {
+      const angle = calculateAngle(rightHip, rightKnee, rightAnkle);
+      if (angle !== null) {
+        rLegAngle = angle;
+        if (showSkeletonRef.current && appModeRef.current !== 'pitching' && visibleMarkersRef.current.legs) {
+          drawAngle(ctx, rightKnee, angle);
+        }
+      }
+    }
+
+    if (leftHip && leftKnee && leftAnkle) {
+      const angle = calculateAngle(leftHip, leftKnee, leftAnkle);
+      if (angle !== null) {
+        lLegAngle = angle;
+        if (showSkeletonRef.current && appModeRef.current !== 'pitching' && visibleMarkersRef.current.legs) {
+          drawAngle(ctx, leftKnee, angle);
+        }
+      }
+    }
+
+    let pelvisAngle = 0;
+    let torsoAngle = 0;
+
+    if (rightShoulder && leftShoulder && rightHip && leftHip) {
+      if (rightShoulder.score! > 0.3 && leftShoulder.score! > 0.3 && rightHip.score! > 0.3 && leftHip.score! > 0.3) {
+        if (cameraView === 'front' || cameraView === 'back') {
+          // Front/Back view: Calculate lateral tilt
+          torsoAngle = Math.atan2(leftShoulder.y - rightShoulder.y, leftShoulder.x - rightShoulder.x) * 180 / Math.PI;
+          pelvisAngle = Math.atan2(leftHip.y - rightHip.y, leftHip.x - rightHip.x) * 180 / Math.PI;
+        } else {
+          // Side view: Calculate forward/backward lean
+          const midShoulder = { x: (leftShoulder.x + rightShoulder.x) / 2, y: (leftShoulder.y + rightShoulder.y) / 2 };
+          const midHip = { x: (leftHip.x + rightHip.x) / 2, y: (leftHip.y + rightHip.y) / 2 };
+          torsoAngle = Math.atan2(midHip.y - midShoulder.y, midHip.x - midShoulder.x) * 180 / Math.PI;
+
+          const rightKnee2 = keypointMap.get('right_knee');
+          const leftKnee2 = keypointMap.get('left_knee');
+          if (rightKnee2 && leftKnee2 && rightKnee2.score! > 0.3 && leftKnee2.score! > 0.3) {
+              const midKnee = { x: (leftKnee2.x + rightKnee2.x) / 2, y: (leftKnee2.y + rightKnee2.y) / 2 };
+              pelvisAngle = Math.atan2(midKnee.y - midHip.y, midKnee.x - midHip.x) * 180 / Math.PI;
+          } else {
+              pelvisAngle = torsoAngle;
+          }
+        }
+
+        let sep = Math.abs(torsoAngle - pelvisAngle);
+        if (sep > 180) sep = 360 - sep;
+        hsSeparation = Math.round(sep);
+      }
+    }
+
+    const speeds = { hip: 0, shoulder: 0, elbow: 0, wrist: 0 };
+
+    if (lastFrameRef.current) {
+      const dt = (now - lastFrameRef.current.time) / 1000;
+      if (dt > 0) {
+        // Rotational velocity (Degrees per second)
+        if (pelvisAngle !== 0 && lastFrameRef.current.pelvisAngle !== 0) {
+          let dPelvis = Math.abs(pelvisAngle - lastFrameRef.current.pelvisAngle);
+          if (dPelvis > 180) dPelvis = 360 - dPelvis;
+          speeds.hip = Math.round(dPelvis / dt);
+        }
+        if (torsoAngle !== 0 && lastFrameRef.current.torsoAngle !== 0) {
+          let dTorso = Math.abs(torsoAngle - lastFrameRef.current.torsoAngle);
+          if (dTorso > 180) dTorso = 360 - dTorso;
+          speeds.shoulder = Math.round(dTorso / dt);
+        }
+
+        // Linear speed for arm components (smoothed in the buffer next)
+        const getLinearSpeed = (name: string) => {
+          const current = keypointMap.get(name);
+          const prev = lastFrameRef.current!.keypoints.get(name);
+          if (current && prev && current.score! > 0.3 && prev.score! > 0.3) {
+            const dist = Math.sqrt(Math.pow(current.x - prev.x, 2) + Math.pow(current.y - prev.y, 2));
+            return Math.round(dist / dt);
+          }
+          return 0;
+        };
+
+        speeds.elbow = getLinearSpeed('right_elbow');
+        speeds.wrist = getLinearSpeed('right_wrist');
+
+        // Smoothing filter (Moving average)
+        speedBufferRef.current.hip.push(speeds.hip);
+        speedBufferRef.current.shoulder.push(speeds.shoulder);
+        speedBufferRef.current.elbow.push(speeds.elbow);
+        speedBufferRef.current.wrist.push(speeds.wrist);
+
+        // Keep last 5 frames for smoothing
+        if (speedBufferRef.current.hip.length > 5) {
+          speedBufferRef.current.hip.shift();
+          speedBufferRef.current.shoulder.shift();
+          speedBufferRef.current.elbow.shift();
+          speedBufferRef.current.wrist.shift();
+        }
+
+        // Apply average
+        const avg = (arr: number[]) => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) || 0;
+        speeds.hip = avg(speedBufferRef.current.hip);
+        speeds.shoulder = avg(speedBufferRef.current.shoulder);
+        speeds.elbow = avg(speedBufferRef.current.elbow);
+        speeds.wrist = avg(speedBufferRef.current.wrist);
+
+        // Record kinematics in rolling history
+        rollingKinematicsRef.current.push({
+          hip: speeds.hip,
+          shoulder: speeds.shoulder,
+          wrist: speeds.wrist,
+          timestamp: now
+        });
+        if (rollingKinematicsRef.current.length > 90) {
+          rollingKinematicsRef.current.shift();
+        }
+
+        // Throttle live kinematics emission (~every 6 frames) so the Kinematic
+        // Sequence chart reflects real joint speeds from the current video feed.
+        kinematicsEmitCounterRef.current += 1;
+        if (kinematicsEmitCounterRef.current >= 6 && onKinematicsUpdateRef.current) {
+          kinematicsEmitCounterRef.current = 0;
+          onKinematicsUpdateRef.current(
+            rollingKinematicsRef.current.map(p => ({
+              time: parseFloat(((p.timestamp - now) / 1000).toFixed(2)),
+              hip: p.hip,
+              shoulder: p.shoulder,
+              wrist: p.wrist
+            }))
+          );
+        }
+      }
+    }
+
+    lastFrameRef.current = {
+      time: now,
+      keypoints: keypointMap,
+      pelvisAngle,
+      torsoAngle
+    };
+
+    // Trajectory Tracking
+    if (showTrajectoryRef.current && appModeRef.current !== 'pitching') {
+      // Default track right wrist
+      if (rightWrist && rightWrist.score && rightWrist.score > 0.4) {
+        wristTrajectory.current.push({ x: rightWrist.x, y: rightWrist.y });
+        if (wristTrajectory.current.length > 45) { // ~0.75s of trail at 60fps
+          wristTrajectory.current.shift();
+        }
+      }
+
+      if (wristTrajectory.current.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(wristTrajectory.current[0].x, wristTrajectory.current[0].y);
+        for (let i = 1; i < wristTrajectory.current.length; i++) {
+          ctx.lineTo(wristTrajectory.current[i].x, wristTrajectory.current[i].y);
+        }
+        ctx.strokeStyle = '#fbbf24'; // amber-400
+        ctx.lineWidth = 3;
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    } else {
+      // Clear trajectory if disabled or in pitching mode
+      wristTrajectory.current = [];
+    }
+
+    // Update metrics back to parent
+    onMetricsUpdate({
+      rightArmAngle: rAngle,
+      leftArmAngle: lAngle,
+      rightLegAngle: rLegAngle,
+      leftLegAngle: lLegAngle,
+      hipShoulderSeparation: hsSeparation,
+      speeds
+    });
+  };
+
   const detectPose = async () => {
     if (!detector || !videoRef.current || !canvasRef.current) return;
+
+    // The offline Analyze sweep has exclusive control of the video/canvas/detector
+    // while it runs - let it finish instead of racing it with the live loop.
+    if (isAnalyzingRef.current) {
+      animationFrameId.current = requestAnimationFrame(detectPose);
+      return;
+    }
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -614,24 +1013,30 @@ export function PoseDetector({
       const currentTimeVal = video.currentTime;
       const currentSource = feedSourceRef.current;
 
-      const shouldReestimate = 
-        !isStatic || 
-        singleFrameAnalyzeRequestedRef.current || 
-        !cachedPoseRef.current || 
-        cachedPoseTimeRef.current !== currentTimeVal || 
+      const shouldReestimate =
+        !isStatic ||
+        singleFrameAnalyzeRequestedRef.current ||
+        !cachedPoseRef.current ||
+        cachedPoseTimeRef.current !== currentTimeVal ||
         cachedPoseSourceRef.current !== currentSource;
 
-      if (shouldReestimate) {
-        poses = await detector.estimatePoses(video);
-        if (poses.length > 0) {
-          cachedPoseRef.current = poses[0];
-          cachedPoseTimeRef.current = currentTimeVal;
-          cachedPoseSourceRef.current = currentSource;
-        } else {
-          cachedPoseRef.current = null;
+      // For an uploaded/replayed video, nothing is tracked until the user has
+      // marked a start/end range and run Analyze. Live camera feed is unaffected.
+      const canLiveTrack = feedSourceRef.current === 'camera' || hasAnalyzedRef.current;
+
+      if (canLiveTrack) {
+        if (shouldReestimate) {
+          poses = await detector.estimatePoses(video);
+          if (poses.length > 0) {
+            cachedPoseRef.current = poses[0];
+            cachedPoseTimeRef.current = currentTimeVal;
+            cachedPoseSourceRef.current = currentSource;
+          } else {
+            cachedPoseRef.current = null;
+          }
+        } else if (cachedPoseRef.current) {
+          poses = [cachedPoseRef.current];
         }
-      } else if (cachedPoseRef.current) {
-        poses = [cachedPoseRef.current];
       }
 
       // Clear previous drawing
@@ -641,237 +1046,7 @@ export function PoseDetector({
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       if (poses.length > 0) {
-        const pose = poses[0];
-        const keypoints = pose.keypoints;
-
-        // Draw keypoints and skeleton
-        if (showSkeletonRef.current && appModeRef.current !== 'pitching') {
-          drawSkeleton(keypoints, ctx);
-          drawKeypoints(keypoints, ctx);
-        }
-
-        // Map keypoints by name for easier access
-        const keypointMap = new Map<string, poseDetection.Keypoint>(
-          keypoints.map(kp => [kp.name || '', kp])
-        );
-
-        const rightShoulder = keypointMap.get('right_shoulder');
-        const rightElbow = keypointMap.get('right_elbow');
-        const rightWrist = keypointMap.get('right_wrist');
-        
-        const leftShoulder = keypointMap.get('left_shoulder');
-        const leftElbow = keypointMap.get('left_elbow');
-        const leftWrist = keypointMap.get('left_wrist');
-
-        let rAngle = 0;
-        let lAngle = 0;
-        let rLegAngle = 0;
-        let lLegAngle = 0;
-        let hsSeparation = 0;
-
-        if (rightShoulder && rightElbow && rightWrist) {
-          const angle = calculateAngle(rightShoulder, rightElbow, rightWrist);
-          if (angle !== null) {
-            rAngle = angle;
-            if (showSkeletonRef.current && appModeRef.current !== 'pitching' && visibleMarkersRef.current.arms) {
-              drawAngle(ctx, rightElbow, angle);
-            }
-          }
-        }
-
-        if (leftShoulder && leftElbow && leftWrist) {
-          const angle = calculateAngle(leftShoulder, leftElbow, leftWrist);
-          if (angle !== null) {
-            lAngle = angle;
-            if (showSkeletonRef.current && appModeRef.current !== 'pitching' && visibleMarkersRef.current.arms) {
-              drawAngle(ctx, leftElbow, angle);
-            }
-          }
-        }
-
-        const rightHip = keypointMap.get('right_hip');
-        const rightKnee = keypointMap.get('right_knee');
-        const rightAnkle = keypointMap.get('right_ankle');
-        
-        const leftHip = keypointMap.get('left_hip');
-        const leftKnee = keypointMap.get('left_knee');
-        const leftAnkle = keypointMap.get('left_ankle');
-
-        if (rightHip && rightKnee && rightAnkle) {
-          const angle = calculateAngle(rightHip, rightKnee, rightAnkle);
-          if (angle !== null) {
-            rLegAngle = angle;
-            if (showSkeletonRef.current && appModeRef.current !== 'pitching' && visibleMarkersRef.current.legs) {
-              drawAngle(ctx, rightKnee, angle);
-            }
-          }
-        }
-
-        if (leftHip && leftKnee && leftAnkle) {
-          const angle = calculateAngle(leftHip, leftKnee, leftAnkle);
-          if (angle !== null) {
-            lLegAngle = angle;
-            if (showSkeletonRef.current && appModeRef.current !== 'pitching' && visibleMarkersRef.current.legs) {
-              drawAngle(ctx, leftKnee, angle);
-            }
-          }
-        }
-
-        let pelvisAngle = 0;
-        let torsoAngle = 0;
-
-        if (rightShoulder && leftShoulder && rightHip && leftHip) {
-          if (rightShoulder.score! > 0.3 && leftShoulder.score! > 0.3 && rightHip.score! > 0.3 && leftHip.score! > 0.3) {
-            if (cameraView === 'front' || cameraView === 'back') {
-              // Front/Back view: Calculate lateral tilt
-              torsoAngle = Math.atan2(leftShoulder.y - rightShoulder.y, leftShoulder.x - rightShoulder.x) * 180 / Math.PI;
-              pelvisAngle = Math.atan2(leftHip.y - rightHip.y, leftHip.x - rightHip.x) * 180 / Math.PI;
-            } else {
-              // Side view: Calculate forward/backward lean
-              const midShoulder = { x: (leftShoulder.x + rightShoulder.x) / 2, y: (leftShoulder.y + rightShoulder.y) / 2 };
-              const midHip = { x: (leftHip.x + rightHip.x) / 2, y: (leftHip.y + rightHip.y) / 2 };
-              torsoAngle = Math.atan2(midHip.y - midShoulder.y, midHip.x - midShoulder.x) * 180 / Math.PI;
-              
-              const rightKnee = keypointMap.get('right_knee');
-              const leftKnee = keypointMap.get('left_knee');
-              if (rightKnee && leftKnee && rightKnee.score! > 0.3 && leftKnee.score! > 0.3) {
-                  const midKnee = { x: (leftKnee.x + rightKnee.x) / 2, y: (leftKnee.y + rightKnee.y) / 2 };
-                  pelvisAngle = Math.atan2(midKnee.y - midHip.y, midKnee.x - midHip.x) * 180 / Math.PI;
-              } else {
-                  pelvisAngle = torsoAngle;
-              }
-            }
-            
-            let sep = Math.abs(torsoAngle - pelvisAngle);
-            if (sep > 180) sep = 360 - sep;
-            hsSeparation = Math.round(sep);
-          }
-        }
-
-        const now = performance.now();
-        const speeds = { hip: 0, shoulder: 0, elbow: 0, wrist: 0 };
-
-        if (lastFrameRef.current) {
-          const dt = (now - lastFrameRef.current.time) / 1000;
-          if (dt > 0) {
-            // Rotational velocity (Degrees per second)
-            if (pelvisAngle !== 0 && lastFrameRef.current.pelvisAngle !== 0) {
-              let dPelvis = Math.abs(pelvisAngle - lastFrameRef.current.pelvisAngle);
-              if (dPelvis > 180) dPelvis = 360 - dPelvis;
-              speeds.hip = Math.round(dPelvis / dt);
-            }
-            if (torsoAngle !== 0 && lastFrameRef.current.torsoAngle !== 0) {
-              let dTorso = Math.abs(torsoAngle - lastFrameRef.current.torsoAngle);
-              if (dTorso > 180) dTorso = 360 - dTorso;
-              speeds.shoulder = Math.round(dTorso / dt);
-            }
-
-            // Linear speed for arm components (smoothed in the buffer next)
-            const getLinearSpeed = (name: string) => {
-              const current = keypointMap.get(name);
-              const prev = lastFrameRef.current!.keypoints.get(name);
-              if (current && prev && current.score! > 0.3 && prev.score! > 0.3) {
-                const dist = Math.sqrt(Math.pow(current.x - prev.x, 2) + Math.pow(current.y - prev.y, 2));
-                return Math.round(dist / dt);
-              }
-              return 0;
-            };
-            
-            speeds.elbow = getLinearSpeed('right_elbow');
-            speeds.wrist = getLinearSpeed('right_wrist');
-            
-            // Smoothing filter (Moving average)
-            speedBufferRef.current.hip.push(speeds.hip);
-            speedBufferRef.current.shoulder.push(speeds.shoulder);
-            speedBufferRef.current.elbow.push(speeds.elbow);
-            speedBufferRef.current.wrist.push(speeds.wrist);
-            
-            // Keep last 5 frames for smoothing
-            if (speedBufferRef.current.hip.length > 5) {
-              speedBufferRef.current.hip.shift();
-              speedBufferRef.current.shoulder.shift();
-              speedBufferRef.current.elbow.shift();
-              speedBufferRef.current.wrist.shift();
-            }
-            
-            // Apply average
-            const avg = (arr: number[]) => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) || 0;
-            speeds.hip = avg(speedBufferRef.current.hip);
-            speeds.shoulder = avg(speedBufferRef.current.shoulder);
-            speeds.elbow = avg(speedBufferRef.current.elbow);
-            speeds.wrist = avg(speedBufferRef.current.wrist);
-
-            // Record kinematics in rolling history
-            rollingKinematicsRef.current.push({
-              hip: speeds.hip,
-              shoulder: speeds.shoulder,
-              wrist: speeds.wrist,
-              timestamp: now
-            });
-            if (rollingKinematicsRef.current.length > 90) {
-              rollingKinematicsRef.current.shift();
-            }
-
-            // Throttle live kinematics emission (~every 6 frames) so the Kinematic
-            // Sequence chart reflects real joint speeds from the current video feed.
-            kinematicsEmitCounterRef.current += 1;
-            if (kinematicsEmitCounterRef.current >= 6 && onKinematicsUpdateRef.current) {
-              kinematicsEmitCounterRef.current = 0;
-              onKinematicsUpdateRef.current(
-                rollingKinematicsRef.current.map(p => ({
-                  time: parseFloat(((p.timestamp - now) / 1000).toFixed(2)),
-                  hip: p.hip,
-                  shoulder: p.shoulder,
-                  wrist: p.wrist
-                }))
-              );
-            }
-          }
-        }
-
-        lastFrameRef.current = {
-          time: now,
-          keypoints: keypointMap,
-          pelvisAngle,
-          torsoAngle
-        };
-
-        // Trajectory Tracking
-        if (showTrajectoryRef.current && appModeRef.current !== 'pitching') {
-          // Default track right wrist
-          if (rightWrist && rightWrist.score && rightWrist.score > 0.4) {
-            wristTrajectory.current.push({ x: rightWrist.x, y: rightWrist.y });
-            if (wristTrajectory.current.length > 45) { // ~0.75s of trail at 60fps
-              wristTrajectory.current.shift();
-            }
-          }
-
-          if (wristTrajectory.current.length > 1) {
-            ctx.beginPath();
-            ctx.moveTo(wristTrajectory.current[0].x, wristTrajectory.current[0].y);
-            for (let i = 1; i < wristTrajectory.current.length; i++) {
-              ctx.lineTo(wristTrajectory.current[i].x, wristTrajectory.current[i].y);
-            }
-            ctx.strokeStyle = '#fbbf24'; // amber-400
-            ctx.lineWidth = 3;
-            ctx.setLineDash([5, 5]);
-            ctx.stroke();
-            ctx.setLineDash([]);
-          }
-        } else {
-          // Clear trajectory if disabled or in pitching mode
-          wristTrajectory.current = [];
-        }
-
-        // Update metrics back to parent
-        onMetricsUpdate({
-          rightArmAngle: rAngle,
-          leftArmAngle: lAngle,
-          rightLegAngle: rLegAngle,
-          leftLegAngle: lLegAngle,
-          hipShoulderSeparation: hsSeparation,
-          speeds
-        });
+        processPoseFrame(poses[0], ctx, performance.now());
       }
 
       // Render custom overlay for Strike Zone and logged pitches in Pitch Tracker mode
@@ -1841,13 +2016,38 @@ export function PoseDetector({
             )}
           </div>
 
-          {/* Telestrator / Drawing Tools Floating Panel */}
-          <div className="absolute left-3 top-20 sm:top-24 z-20 flex flex-row sm:flex-col items-center gap-2 p-1.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
-            {/* Header Icon (Visible on desktop) */}
-            <div className="hidden sm:flex items-center justify-center p-1 text-slate-500 border-b border-slate-800/80 pb-2 mb-0.5" title="Telestrator Tools">
-              <PenTool className="w-4 h-4 text-sky-400" />
-            </div>
+          {/* Telestrator Toggle Button - the drawing tools stay off-canvas until called on demand */}
+          <button
+            onClick={() => {
+              setShowDrawTools(prev => {
+                const next = !prev;
+                if (!next) {
+                  // Deselect any active tool when hiding the drawer so a hidden
+                  // pen/shape tool can't keep intercepting clicks on the video.
+                  setActiveDrawTool('none');
+                }
+                return next;
+              });
+              singleFrameAnalyzeRequestedRef.current = true;
+            }}
+            className={`absolute left-3 top-20 sm:top-24 z-30 p-2.5 rounded-xl border backdrop-blur-md shadow-lg transition-colors ${
+              showDrawTools
+                ? 'bg-sky-600 border-sky-500 text-white'
+                : 'bg-slate-950/90 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+            title={showDrawTools ? 'Hide drawing tools' : 'Show drawing tools (Telestrator)'}
+          >
+            <PenTool className="w-4 h-4" />
+          </button>
 
+          {/* Telestrator / Drawing Tools Panel - off-canvas by default, slides in on demand */}
+          <div
+            className={`absolute left-3 top-[4.75rem] sm:top-[5.75rem] z-20 flex flex-row sm:flex-col items-center gap-2 p-1.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all duration-200 origin-top-left ${
+              showDrawTools
+                ? 'opacity-100 translate-x-0 scale-100 pointer-events-auto'
+                : 'opacity-0 -translate-x-3 scale-95 pointer-events-none'
+            }`}
+          >
             {/* Tool Selection Group */}
             <div className="flex flex-row sm:flex-col gap-1.5">
               <button
@@ -2061,60 +2261,115 @@ export function PoseDetector({
 
             {/* Center: Playback controls for Video Sources */}
             {feedSource !== 'camera' ? (
-              <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:max-w-md bg-slate-900/85 px-3 py-2 sm:py-1.5 rounded-xl border border-slate-800/80">
-                {/* Playback Buttons Group */}
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => skipFrame('backward')}
-                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                    title="Skip 1 frame backward (Left Arrow)"
-                  >
-                    <SkipBack className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={togglePlayPause}
-                    className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors flex items-center gap-1.5 ${
-                      isPaused 
-                        ? 'bg-sky-600 text-white hover:bg-sky-500 shadow-sm' 
-                        : 'bg-slate-800 text-slate-300 hover:text-white'
-                    }`}
-                    title="Play / Pause video (Spacebar)"
-                  >
-                    {isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
-                    <span>{isPaused ? 'Play' : 'Pause'}</span>
-                  </button>
-                  <button
-                    onClick={() => skipFrame('forward')}
-                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                    title="Skip 1 frame forward (Right Arrow)"
-                  >
-                    <SkipForward className="w-3.5 h-3.5" />
-                  </button>
+              <div className="flex flex-col gap-2 w-full lg:max-w-md bg-slate-900/85 px-3 py-2 sm:py-1.5 rounded-xl border border-slate-800/80">
+                <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+                  {/* Playback Buttons Group */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => skipFrame('backward')}
+                      className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                      title="Skip 1 frame backward (Left Arrow)"
+                    >
+                      <SkipBack className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={togglePlayPause}
+                      className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors flex items-center gap-1.5 ${
+                        isPaused 
+                          ? 'bg-sky-600 text-white hover:bg-sky-500 shadow-sm' 
+                          : 'bg-slate-800 text-slate-300 hover:text-white'
+                      }`}
+                      title="Play / Pause video (Spacebar)"
+                    >
+                      {isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
+                      <span>{isPaused ? 'Play' : 'Pause'}</span>
+                    </button>
+                    <button
+                      onClick={() => skipFrame('forward')}
+                      className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                      title="Skip 1 frame forward (Right Arrow)"
+                    >
+                      <SkipForward className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Scrubber Slider Group */}
+                  <div className="flex items-center gap-2.5 w-full">
+                    <span className="text-[10px] font-mono text-slate-400 select-none shrink-0 min-w-[28px] text-right">
+                      {formatTime(currentTime)}
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={videoDuration || 100}
+                      step={0.01}
+                      value={currentTime}
+                      onChange={handleSeekChange}
+                      className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-sky-400 focus:outline-none transition-all hover:bg-slate-800"
+                      style={{
+                        background: `linear-gradient(to right, #38bdf8 0%, #38bdf8 ${
+                          (currentTime / (videoDuration || 1)) * 100
+                        }%, #1e293b ${(currentTime / (videoDuration || 1)) * 100}%, #1e293b 100%)`
+                      }}
+                    />
+                    <span className="text-[10px] font-mono text-slate-400 select-none shrink-0 min-w-[28px]">
+                      {formatTime(videoDuration)}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Scrubber Slider Group */}
-                <div className="flex items-center gap-2.5 w-full">
-                  <span className="text-[10px] font-mono text-slate-400 select-none shrink-0 min-w-[28px] text-right">
-                    {formatTime(currentTime)}
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={videoDuration || 100}
-                    step={0.01}
-                    value={currentTime}
-                    onChange={handleSeekChange}
-                    className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-sky-400 focus:outline-none transition-all hover:bg-slate-800"
-                    style={{
-                      background: `linear-gradient(to right, #38bdf8 0%, #38bdf8 ${
-                        (currentTime / (videoDuration || 1)) * 100
-                      }%, #1e293b ${(currentTime / (videoDuration || 1)) * 100}%, #1e293b 100%)`
-                    }}
-                  />
-                  <span className="text-[10px] font-mono text-slate-400 select-none shrink-0 min-w-[28px]">
-                    {formatTime(videoDuration)}
-                  </span>
-                </div>
+                  {/* Analysis Range Controls - nothing is tracked/recorded for this clip
+                      until a start/end range is marked and Analyze is run */}
+                  <div className="flex items-center gap-1.5 w-full">
+                    <button
+                      onClick={handleMarkRangeStart}
+                      disabled={isAnalyzing}
+                      className={`flex items-center gap-1 px-2 py-1 text-[9px] font-bold uppercase tracking-wider rounded border transition-colors disabled:opacity-40 ${
+                        rangeStart !== null
+                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                      title="Mark the current frame as the start of the portion to analyze"
+                    >
+                      <Flag className="w-3 h-3" />
+                      <span>{rangeStart !== null ? formatTime(rangeStart) : 'Start'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleMarkRangeEnd}
+                      disabled={isAnalyzing}
+                      className={`flex items-center gap-1 px-2 py-1 text-[9px] font-bold uppercase tracking-wider rounded border transition-colors disabled:opacity-40 ${
+                        rangeEnd !== null
+                          ? 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                      title="Mark the current frame as the end of the portion to analyze"
+                    >
+                      <Flag className="w-3 h-3" />
+                      <span>{rangeEnd !== null ? formatTime(rangeEnd) : 'End'}</span>
+                    </button>
+
+                    <button
+                      onClick={runAnalysis}
+                      disabled={rangeStart === null || rangeEnd === null || rangeEnd <= rangeStart || isAnalyzing}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider rounded border transition-colors bg-sky-600 border-sky-500 text-white hover:bg-sky-500 disabled:opacity-30 disabled:pointer-events-none"
+                      title="Analyze the marked portion of the video and populate the joint metrics and Kinematic Sequence chart"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>{isAnalyzing ? `Analyzing ${analysisProgress}%` : hasAnalyzed ? 'Re-analyze' : 'Analyze'}</span>
+                    </button>
+
+                    {(rangeStart !== null || rangeEnd !== null || hasAnalyzed) && (
+                      <button
+                        onClick={handleClearRange}
+                        disabled={isAnalyzing}
+                        className="p-1 rounded border border-slate-800 bg-slate-800 text-slate-400 hover:text-white transition-colors disabled:opacity-40"
+                        title="Clear the marked range and analyzed results"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
               </div>
             ) : (
               <div className="flex items-center justify-center gap-2 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-800 shrink-0">
