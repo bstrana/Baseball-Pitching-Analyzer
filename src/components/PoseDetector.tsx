@@ -1773,18 +1773,22 @@ export function PoseDetector({
             </div>
           </div>
         ) : (
-          <div className="absolute inset-0 w-full h-full z-0 flex items-center justify-center p-2 lg:p-4 bg-black/40">
-            <canvas
-              ref={canvasRef}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
-              className="w-full h-auto max-w-full max-h-full aspect-[16/9] cursor-crosshair bg-slate-950 shadow-2xl border border-slate-800/40 rounded-xl"
-              title={appMode === 'pitching' ? "Drag the strike zone or its corners to calibrate, and tap to plot pitches" : "Pitching mechanics live stream"}
-            />
+          <div className="absolute inset-0 w-full h-full z-0 flex items-center justify-center p-2 lg:p-4 bg-black/40 overflow-auto">
+            {/* Resizable wrapper: drag the bottom-right corner to resize the video canvas.
+                object-contain on the canvas keeps the video's own aspect ratio inside it. */}
+            <div className="relative resize overflow-hidden w-full h-full max-w-full max-h-full min-w-[240px] min-h-[135px] rounded-xl border border-slate-800/40 shadow-2xl bg-slate-950">
+              <canvas
+                ref={canvasRef}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                className="w-full h-full object-contain cursor-crosshair bg-slate-950"
+                title={appMode === 'pitching' ? "Drag the strike zone or its corners to calibrate, and tap to plot pitches" : "Pitching mechanics live stream"}
+              />
+            </div>
           </div>
         )}
       </div>
