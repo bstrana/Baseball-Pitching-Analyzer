@@ -6,7 +6,7 @@
         "id": "io.github.bstrana.baseball-pitching-analyzer",
         "title": "Baseball Pitching Analyzer",
         "author": "bstrana",
-        "description": "Real-time baseball pitching and swing mechanics analysis, powered by TensorFlow.js pose detection running entirely in the browser. Track pitching/hitting mechanics live from a webcam, or upload and replay video, mark a range, and analyze just that portion for joint speed metrics and a kinematic sequence chart. Also includes a strike zone / pitch tracker overlay and telestrator-style drawing annotations. All video processing happens client-side - no video or pose data is uploaded to or stored on the server.",
+        "description": "Real-time baseball pitching and swing mechanics analysis, powered by TensorFlow.js pose detection running entirely in the browser. Track pitching and hitting mechanics live from your webcam — all processing happens client-side in the browser; no server-side processing or account is required.",
         "tagline": "Real-time baseball pitching & swing mechanics analysis",
         "version": "1.0.0",
         "manifestVersion": 2,
@@ -35,7 +35,7 @@
         "forumUrl": "https://github.com/bstrana/Baseball-Pitching-Analyzer/issues",
         "singleUser": false,
         "changelog": "Initial Cloudron packaging release.",
-        "postInstallMessage": "The app is a static, client-side tool - no database or account setup is required. Open the app URL and grant camera access when your browser prompts for it (pose tracking runs entirely in-browser; nothing is uploaded to the server). This app has no built-in login - use Cloudron's app access control (App -> Users tab) if you want to restrict who can reach it.",
+        "postInstallMessage": "The app is a static, client-side tool - no database or account setup is required. Open the app URL and grant camera access when your browser prompts for it (pose tracking runs locally in your browser). If the camera permission is denied, enable it in the browser site settings.",
         "packagerName": "bstrana",
         "packagerUrl": "https://github.com/bstrana"
       },
