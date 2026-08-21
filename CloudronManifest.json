@@ -28,7 +28,7 @@
   "postInstallMessage": "file://POSTINSTALL.md",
   "documentationUrl": "https://github.com/bstrana/Baseball-Pitching-Analyzer#readme",
   "forumUrl": "https://github.com/bstrana/Baseball-Pitching-Analyzer/issues",
-  "minBoxVersion": "9.1.0",
+  "minBoxVersion": "7.0.0",
   "singleUser": false,
   "packagerName": "bstrana",
   "packagerUrl": "https://github.com/bstrana"
