@@ -15,7 +15,7 @@
   "manifestVersion": 2,
   "website": "https://github.com/bstrana/Baseball-Pitching-Analyzer",
   "contactEmail": "tomislav.bosanac@gmail.com",
-  "icon": "appicon.png",
+  "icon": "file://appicon.png",
   "iconUrl": "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/appicon.png",
   "tags": [
     "sports",
