@@ -10,7 +10,7 @@
         "tagline": "Real-time baseball pitching & swing mechanics analysis",
         "version": "1.0.0",
         "manifestVersion": 2,
-        "minBoxVersion": "9.1.0",
+        "minBoxVersion": "7.0.0",
         "website": "https://github.com/bstrana/Baseball-Pitching-Analyzer",
         "contactEmail": "tomislav.bosanac@gmail.com",
         "healthCheckPath": "/health",
