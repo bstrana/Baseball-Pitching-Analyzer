@@ -19,7 +19,7 @@
         "addons": {
           "localstorage": {}
         },
-        "icon": "appicon.png",
+        "icon": "file://appicon.png",
         "iconUrl": "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/appicon.png",
         "tags": [
           "sports",
