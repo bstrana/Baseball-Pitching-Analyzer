@@ -13,7 +13,7 @@
         "minBoxVersion": "9.1.0",
         "website": "https://github.com/bstrana/Baseball-Pitching-Analyzer",
         "contactEmail": "tomislav.bosanac@gmail.com",
-        "healthCheckPath": "/",
+        "healthCheckPath": "/health",
         "httpPort": 8000,
         "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.0.0",
         "addons": {
