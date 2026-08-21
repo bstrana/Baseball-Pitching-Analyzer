@@ -1,0 +1,43 @@
+{
+  "stable": true,
+  "versions": {
+    "1.0.0": {
+      "manifest": {
+        "id": "io.github.bstrana.baseball-pitching-analyzer",
+        "title": "Baseball Pitching Analyzer",
+        "author": "bstrana",
+        "description": "Real-time baseball pitching and swing mechanics analysis, powered by TensorFlow.js pose detection running entirely in the browser. Track pitching/hitting mechanics live from a webcam, or upload and replay video, mark a range, and analyze just that portion for joint speed metrics and a kinematic sequence chart. Also includes a strike zone / pitch tracker overlay and telestrator-style drawing annotations. All video processing happens client-side - no video or pose data is uploaded to or stored on the server.",
+        "tagline": "Real-time baseball pitching & swing mechanics analysis",
+        "version": "1.0.0",
+        "manifestVersion": 2,
+        "minBoxVersion": "9.1.0",
+        "website": "https://github.com/bstrana/Baseball-Pitching-Analyzer",
+        "contactEmail": "tomislav.bosanac@gmail.com",
+        "healthCheckPath": "/",
+        "httpPort": 8000,
+        "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.0.0",
+        "addons": {},
+        "icon": "file://logo.png",
+        "iconUrl": "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/logo.png",
+        "tags": [
+          "sports",
+          "baseball",
+          "video",
+          "analytics"
+        ],
+        "mediaLinks": [],
+        "memoryLimit": 268435456,
+        "documentationUrl": "https://github.com/bstrana/Baseball-Pitching-Analyzer#readme",
+        "forumUrl": "https://github.com/bstrana/Baseball-Pitching-Analyzer/issues",
+        "singleUser": false,
+        "changelog": "Initial Cloudron packaging release.",
+        "packagerName": "bstrana",
+        "packagerUrl": "https://github.com/bstrana"
+      },
+      "creationDate": "Fri, 21 Aug 2026 18:54:04 GMT",
+      "ts": "Fri, 21 Aug 2026 18:54:04 GMT",
+      "publishState": "published",
+      "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.0.0"
+    }
+  }
+}
