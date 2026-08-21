@@ -6,7 +6,7 @@
   "changelog": "file://CHANGELOG.md",
   "tagline": "Real-time baseball pitching &amp; swing mechanics analysis",
   "version": "1.0.0",
-  "healthCheckPath": "/",
+  "healthCheckPath": "/health",
   "httpPort": 8000,
   "addons": {
     "localstorage": {}
