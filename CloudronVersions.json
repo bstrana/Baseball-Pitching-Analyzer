@@ -16,7 +16,9 @@
         "healthCheckPath": "/",
         "httpPort": 8000,
         "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.0.0",
-        "addons": {},
+        "addons": {
+          "localstorage": {}
+        },
         "icon": "file://logo.png",
         "iconUrl": "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/logo.png",
         "tags": [
