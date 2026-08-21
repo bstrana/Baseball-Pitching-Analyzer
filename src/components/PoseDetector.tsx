@@ -173,7 +173,7 @@ export function PoseDetector({
   // Recording states
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [recordings, setRecordings] = useState<{ id: string; name: string; url: string; blob: Blob; timestamp: number; kinematicsData?: any[] }[]>([]);
+  const [recordings, setRecordings] = useState<{ id: string; name: string; url: string; blob: Blob; timestamp: number }[]>([]);
   const [showRecordingsList, setShowRecordingsList] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -382,23 +382,13 @@ export function PoseDetector({
       recorder.onstop = () => {
         const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
         const url = URL.createObjectURL(blob);
-        
-        // Let's capture the current rolling kinematics of the recording
-        const nowMs = performance.now();
-        const recordedKinematics = rollingKinematicsRef.current.map(p => ({
-          time: parseFloat(((p.timestamp - nowMs) / 1000).toFixed(2)),
-          hip: p.hip,
-          shoulder: p.shoulder,
-          wrist: p.wrist
-        }));
 
         const newRecording = {
           id: crypto.randomUUID(),
           name: `Throw Rec #${recordings.length + 1} (${new Date().toLocaleTimeString()})`,
           url,
           blob,
-          timestamp: Date.now(),
-          kinematicsData: recordedKinematics
+          timestamp: Date.now()
         };
         
         setRecordings(prev => [newRecording, ...prev]);
@@ -434,7 +424,7 @@ export function PoseDetector({
   };
 
   // Play a selected recording back in the pose detector
-  const playRecording = (rec: { url: string; kinematicsData?: any[] }) => {
+  const playRecording = (rec: { url: string }) => {
     setError(null);
     setFeedSource('upload');
     resetAnalysisState();
@@ -559,6 +549,9 @@ export function PoseDetector({
     if (rangeEnd !== null && rangeEnd <= t) setRangeEnd(null);
     setHasAnalyzed(false);
     hasAnalyzedRef.current = false;
+    rollingKinematicsRef.current = [];
+    onMetricsUpdate(ZERO_METRICS);
+    onKinematicsUpdateRef.current?.([]);
   };
 
   const handleMarkRangeEnd = () => {
@@ -568,6 +561,9 @@ export function PoseDetector({
     if (rangeStart !== null && rangeStart >= t) setRangeStart(null);
     setHasAnalyzed(false);
     hasAnalyzedRef.current = false;
+    rollingKinematicsRef.current = [];
+    onMetricsUpdate(ZERO_METRICS);
+    onKinematicsUpdateRef.current?.([]);
   };
 
   const handleClearRange = () => {
@@ -600,6 +596,7 @@ export function PoseDetector({
   // uploaded/replayed video, running pose detection on each sampled frame so the joint
   // metrics and Kinematic Sequence chart reflect only that portion of the video.
   const runAnalysis = async () => {
+    if (isAnalyzingRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || !detector) return;
@@ -659,6 +656,10 @@ export function PoseDetector({
         wrist: p.wrist
       }))
     );
+
+    // Clear so the next live frame starts a fresh dt baseline instead of diffing
+    // against the sweep's video-time-domain timestamp.
+    lastFrameRef.current = null;
 
     isAnalyzingRef.current = false;
     setIsAnalyzing(false);
