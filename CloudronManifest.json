@@ -8,7 +8,9 @@
   "version": "1.0.0",
   "healthCheckPath": "/",
   "httpPort": 8000,
-  "addons": {},
+  "addons": {
+    "localstorage": {}
+  },
   "manifestVersion": 2,
   "website": "https://github.com/bstrana/Baseball-Pitching-Analyzer",
   "contactEmail": "tomislav.bosanac@gmail.com",
