@@ -14,7 +14,7 @@ Files involved:
   a `Permissions-Policy: camera=(self)` header so the pose-tracking camera
   prompt isn't blocked, and cache headers for hashed static assets
 * `cloudron/start.sh` - container entrypoint (`nginx -g "daemon off;"`)
-* `logo.png` - 512x512 app icon (placeholder - swap for your own branding)
+* `appicon.png` - 512x512 app icon (placeholder - swap for your own branding)
 * `DESCRIPTION.md`, `CHANGELOG.md`, `POSTINSTALL.md` - Cloudron App Store copy
 
 ## Prerequisites
