@@ -30,10 +30,6 @@
         "mediaLinks": [
           "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/appicon.png"
         ],
-        "memoryLimit": 4294967296,
-        "documentationUrl": "https://github.com/bstrana/Baseball-Pitching-Analyzer#readme",
-        "forumUrl": "https://github.com/bstrana/Baseball-Pitching-Analyzer/issues",
-        "singleUser": false,
         "changelog": "Initial Cloudron packaging release.",
         "postInstallMessage": "The app is a static, client-side tool - no database or account setup is required. Open the app URL and grant camera access when your browser prompts for it (pose tracking runs locally in your browser). If the camera permission is denied, enable it in the browser site settings.",
         "packagerName": "bstrana",
