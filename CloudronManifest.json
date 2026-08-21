@@ -1,5 +1,5 @@
 {
-  "id": "com.github.bstrana.baseballpitchinganalyzer",
+  "id": "io.github.bstrana.baseball-pitching-analyzer",
   "title": "Baseball Pitching Analyzer",
   "author": "bstrana",
   "description": "file://DESCRIPTION.md",
@@ -13,6 +13,7 @@
   "website": "https://github.com/bstrana/Baseball-Pitching-Analyzer",
   "contactEmail": "tomislav.bosanac@gmail.com",
   "icon": "file://logo.png",
+  "iconUrl": "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/logo.png",
   "tags": [
     "sports",
     "baseball",
@@ -24,6 +25,8 @@
   "postInstallMessage": "file://POSTINSTALL.md",
   "documentationUrl": "https://github.com/bstrana/Baseball-Pitching-Analyzer#readme",
   "forumUrl": "https://github.com/bstrana/Baseball-Pitching-Analyzer/issues",
-  "minBoxVersion": "7.0.0",
-  "singleUser": false
+  "minBoxVersion": "9.1.0",
+  "singleUser": false,
+  "packagerName": "bstrana",
+  "packagerUrl": "https://github.com/bstrana"
 }
