@@ -4,10 +4,11 @@
   "author": "bstrana",
   "description": "file://DESCRIPTION.md",
   "changelog": "file://CHANGELOG.md",
-  "tagline": "Real-time baseball pitching &amp; swing mechanics analysis",
+  "tagline": "Real-time baseball pitching & swing mechanics analysis",
   "version": "1.0.0",
   "healthCheckPath": "/health",
   "httpPort": 8000,
+  "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.0.0",
   "addons": {
     "localstorage": {}
   },
