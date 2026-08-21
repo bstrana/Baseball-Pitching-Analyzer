@@ -15,7 +15,7 @@
   "manifestVersion": 2,
   "website": "https://github.com/bstrana/Baseball-Pitching-Analyzer",
   "contactEmail": "tomislav.bosanac@gmail.com",
-  "icon": "file://appicon.png",
+  "icon": "appicon.png",
   "iconUrl": "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/appicon.png",
   "tags": [
     "sports",
@@ -28,7 +28,7 @@
   "postInstallMessage": "file://POSTINSTALL.md",
   "documentationUrl": "https://github.com/bstrana/Baseball-Pitching-Analyzer#readme",
   "forumUrl": "https://github.com/bstrana/Baseball-Pitching-Analyzer/issues",
-  "minBoxVersion": "7.0.0",
+  "minBoxVersion": "9.1.0",
   "singleUser": false,
   "packagerName": "bstrana",
   "packagerUrl": "https://github.com/bstrana"
