@@ -120,6 +120,39 @@ export default function App() {
 
   const selectedPitch = pitches.find(p => p.id === selectedPitchId) || pitches[pitches.length - 1];
 
+  const modeSelector = (
+    <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
+      <button
+        onClick={() => {
+          setAppMode('mechanics');
+          setActiveMobileTab('feed');
+        }}
+        className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
+          appMode === 'mechanics'
+            ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/20 font-extrabold'
+            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+        }`}
+      >
+        <Activity className="w-4 h-4" />
+        <span>Mechanics Tracker</span>
+      </button>
+      <button
+        onClick={() => {
+          setAppMode('pitching');
+          setActiveMobileTab('feed');
+        }}
+        className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
+          appMode === 'pitching'
+            ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20 font-extrabold'
+            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+        }`}
+      >
+        <Target className="w-4 h-4" />
+        <span>Pitch Tracker</span>
+      </button>
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
       {/* Top Navigation Bar */}
@@ -131,6 +164,9 @@ export default function App() {
           <div className="h-6 w-px bg-slate-700 mx-1 sm:mx-2 hidden sm:block"></div>
           <span className="text-[10px] sm:text-xs font-mono px-2 py-1 bg-slate-800 rounded border border-slate-700 text-sky-400 hidden sm:inline-block">TENSORFLOW READY</span>
         </div>
+        {/* Mode Selector - hidden below sm, shown in the small-screens row instead */}
+        <div className="hidden sm:flex">{modeSelector}</div>
+
         <div className="flex items-center gap-3 sm:gap-4 font-sans">
           <div className="flex items-center gap-2 hidden md:flex">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
@@ -139,38 +175,9 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Mode Selector Sub-Header */}
-      <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex justify-center shrink-0 z-20">
-        <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
-          <button
-            onClick={() => {
-              setAppMode('mechanics');
-              setActiveMobileTab('feed');
-            }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
-              appMode === 'mechanics'
-                ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/20 font-extrabold'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-            }`}
-          >
-            <Activity className="w-4 h-4" />
-            <span>Mechanics Tracker</span>
-          </button>
-          <button
-            onClick={() => {
-              setAppMode('pitching');
-              setActiveMobileTab('feed');
-            }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
-              appMode === 'pitching'
-                ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20 font-extrabold'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-            }`}
-          >
-            <Target className="w-4 h-4" />
-            <span>Pitch Tracker</span>
-          </button>
-        </div>
+      {/* Mode Selector - small screens only, doesn't fit in the top bar */}
+      <div className="sm:hidden bg-slate-900 border-b border-slate-800 px-4 py-2 flex justify-center shrink-0 z-20">
+        {modeSelector}
       </div>
 
       <div className="flex flex-1 overflow-hidden flex-col lg:flex-row relative">
