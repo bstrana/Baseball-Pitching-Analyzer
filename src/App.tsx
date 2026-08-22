@@ -3,8 +3,9 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
-import { Activity, Crosshair, Download, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders } from 'lucide-react';
+import { Activity, Crosshair, Download, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { keycloak, keycloakEnabled } from './auth';
 
 export default function App() {
   const [showSetupModal, setShowSetupModal] = useState(false);
@@ -143,7 +144,17 @@ export default function App() {
             <Settings className="w-4 h-4 text-sky-400" />
             <span>SESSION SETUP</span>
           </button>
-          
+
+          {keycloakEnabled && (
+            <button
+              onClick={() => keycloak!.logout()}
+              title={keycloak?.tokenParsed?.preferred_username ? `Sign out (${keycloak.tokenParsed.preferred_username})` : 'Sign out'}
+              className="p-1.5 sm:p-2 bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-md shadow transition-all cursor-pointer"
+            >
+              <LogOut className="w-4 h-4 text-sky-400" />
+            </button>
+          )}
+
           <div className="relative">
             <button 
               onClick={() => setShowExportDropdown(!showExportDropdown)}
