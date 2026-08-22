@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local PocketBase data/binary when running `pocketbase serve` for dev
+pb_data/
+pocketbase

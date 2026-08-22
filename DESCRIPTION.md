@@ -11,11 +11,15 @@ pose detection running entirely in the browser.
 * Strike zone / pitch tracker overlay mode
 * Telestrator-style drawing annotations on the video canvas
 * Record and review webcam clips in-browser
+* Player roster with per-player biometrics, and a "Save Session" action that
+  records mechanics/pitch tracker sessions against the selected player
 
 ### Notes
 
-* All video processing happens client-side in the visitor's browser — no video
-  or pose data is uploaded to or stored on the server.
+* All video processing happens client-side in the visitor's browser — video
+  itself is never uploaded anywhere. Explicitly saving a session (via the
+  session menu) stores the resulting metrics, kinematic data, or pitch log —
+  not the video — in the app's bundled PocketBase database.
 * The app requires camera access; grant the browser permission when prompted.
 * Sign-in is required via Keycloak. Configure the connection in
   `/app/data/config.env` after install (see the post-install message) - the

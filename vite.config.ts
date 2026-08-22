@@ -17,6 +17,15 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // Mirrors the /pb/ proxy that cloudron/nginx.conf sets up in production,
+      // so `npm run dev` can talk to a local `pocketbase serve` the same way.
+      proxy: {
+        '/pb': {
+          target: 'http://127.0.0.1:8090',
+          changeOrigin: true,
+          rewrite: (path: string) => path.replace(/^\/pb/, ''),
+        },
+      },
     },
   };
 });
