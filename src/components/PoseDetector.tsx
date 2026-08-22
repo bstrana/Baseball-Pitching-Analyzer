@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical } from 'lucide-react';
+import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical } from 'lucide-react';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, classifyPitch } from '../types';
 
 // Required to initialize the WebGL backend
@@ -57,6 +57,9 @@ interface PoseDetectorProps {
   };
   
   // Optional toggles for HUD integration
+  setShowSkeleton?: (show: boolean) => void;
+  setShowTrajectory?: (show: boolean) => void;
+  setShowStrikeZone?: (show: boolean) => void;
   setCameraView?: (view: 'side' | 'front' | 'back') => void;
   
   // App Mode and Config Changes
@@ -79,6 +82,9 @@ export function PoseDetector({
   currentPitchType,
   currentPitchSpeed,
   visibleMarkers,
+  setShowSkeleton,
+  setShowTrajectory,
+  setShowStrikeZone,
   setCameraView,
   appMode = 'mechanics',
   onConfigChange
@@ -2181,6 +2187,54 @@ export function PoseDetector({
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
+          </div>
+
+          {/* Top Right Quick Settings Toggles Overlay (Compact HUD Row) */}
+          <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
+            {appMode === 'mechanics' && setShowSkeleton && (
+              <button
+                onClick={() => setShowSkeleton(!showSkeleton)}
+                className={`p-2 rounded-lg border backdrop-blur-md transition-all shadow-lg flex items-center justify-center ${
+                  showSkeleton
+                    ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                    : 'bg-black/70 border-slate-700/50 text-slate-400 hover:text-white'
+                }`}
+                title="Toggle Skeleton Tracking overlay"
+              >
+                {showSkeleton ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                <span className="text-[9px] font-bold uppercase tracking-wider ml-1 hidden sm:inline">Skeleton</span>
+              </button>
+            )}
+
+            {appMode === 'mechanics' && setShowTrajectory && (
+              <button
+                onClick={() => setShowTrajectory(!showTrajectory)}
+                className={`p-2 rounded-lg border backdrop-blur-md transition-all shadow-lg flex items-center justify-center ${
+                  showTrajectory
+                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                    : 'bg-black/70 border-slate-700/50 text-slate-400 hover:text-white'
+                }`}
+                title="Toggle Motion Trajectory overlay"
+              >
+                {showTrajectory ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                <span className="text-[9px] font-bold uppercase tracking-wider ml-1 hidden sm:inline">Trajectory</span>
+              </button>
+            )}
+
+            {appMode === 'pitching' && setShowStrikeZone && (
+              <button
+                onClick={() => setShowStrikeZone(!showStrikeZone)}
+                className={`p-2 rounded-lg border backdrop-blur-md transition-all shadow-lg flex items-center justify-center ${
+                  showStrikeZone
+                    ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
+                    : 'bg-black/70 border-slate-700/50 text-slate-400 hover:text-white'
+                }`}
+                title="Toggle Strike Zone overlay"
+              >
+                <Target className="w-4 h-4" />
+                <span className="text-[9px] font-bold uppercase tracking-wider ml-1 hidden sm:inline">Strike Zone</span>
+              </button>
+            )}
           </div>
 
           {/* Bottom Floating Heads-Up Control Bar */}
