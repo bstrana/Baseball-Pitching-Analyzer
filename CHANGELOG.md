@@ -1,3 +1,22 @@
+## 1.2.2
+
+* Add Target Mode to the Pitch Tracker: tap the video canvas to plant a
+  draggable target before a pitch, then tap again where it actually
+  landed. The pitch is graded against the target (on target / good miss /
+  bad miss) using the strike zone's existing grid, with colored rings on
+  the canvas marker and an accuracy tally alongside the other pitch
+  stats. A "Pitcher Throws" toggle relabels the target's location as
+  glove side / arm side for the selected handedness.
+* A pitch can also be flagged as a "bad shape" (flat curve, hanging
+  slider, high changeup, etc.) directly in the Session Pitch Log,
+  independent of where it was located.
+* Replaced the pitch type list with the standard grip taxonomy (four-seam
+  and two-seam fastball, cutter, changeup, curveball, slider, slurve,
+  sweeper, splitter, forkball, knuckleball), grouped by category
+  (Fastball / Breaking Ball / Off-Speed) with scouting abbreviations (FF,
+  FT, FC, CH, CB, SL, SV, SW, SF, FO, KN) throughout the pitch type
+  selector, legend, and session log.
+
 ## 1.2.1
 
 * Pitch Tracker polish: the Telestrator drawing tool is now mechanics-mode
