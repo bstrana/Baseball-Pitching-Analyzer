@@ -62,8 +62,7 @@ interface PoseDetectorProps {
   setShowSkeleton?: (show: boolean) => void;
   setShowTrajectory?: (show: boolean) => void;
   setShowStrikeZone?: (show: boolean) => void;
-  setCameraView?: (view: 'side' | 'front' | 'back') => void;
-  
+
   // App Mode and Config Changes
   appMode?: 'mechanics' | 'pitching';
   onConfigChange?: (config: StrikeZoneConfig) => void;
@@ -75,6 +74,14 @@ interface PoseDetectorProps {
   onCalibrationPixelDistance?: (pixelDistance: number) => void;
   onMeasurementComplete?: (feet: number) => void;
   measurementUnit?: 'ft' | 'm';
+
+  // Digital camera zoom (1x - 3x) applied as a CSS scale on the video canvas.
+  cameraZoom?: number;
+
+  // Which physical camera lens to use ('user' = front/selfie, 'environment' = rear).
+  // Controlled entirely from the off-canvas Settings menu - changing it here
+  // restarts the webcam stream with the new lens.
+  cameraFacingMode?: 'user' | 'environment';
 }
 
 export function PoseDetector({
@@ -95,7 +102,6 @@ export function PoseDetector({
   setShowSkeleton,
   setShowTrajectory,
   setShowStrikeZone,
-  setCameraView,
   appMode = 'mechanics',
   onConfigChange,
   measureMode = 'none',
@@ -103,7 +109,9 @@ export function PoseDetector({
   pixelsPerFoot,
   onCalibrationPixelDistance,
   onMeasurementComplete,
-  measurementUnit = 'ft'
+  measurementUnit = 'ft',
+  cameraZoom = 1,
+  cameraFacingMode = 'environment'
 }: PoseDetectorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -171,8 +179,7 @@ export function PoseDetector({
   
   const pressPosRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Video scrubber and camera direction states
-  const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
+  // Video scrubber state
   const [videoDuration, setVideoDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -381,11 +388,18 @@ export function PoseDetector({
     }
   };
 
-  const toggleCameraFacingMode = () => {
-    const nextFacingMode = cameraFacingMode === 'user' ? 'environment' : 'user';
-    setCameraFacingMode(nextFacingMode);
-    startCamera(nextFacingMode);
-  };
+  // Restart the webcam stream with the new lens whenever the off-canvas
+  // Settings menu changes cameraFacingMode - skip the initial mount so this
+  // doesn't fight the "Auto-play camera when loaded" effect below.
+  const prevCameraFacingModeRef = useRef(cameraFacingMode);
+  useEffect(() => {
+    if (prevCameraFacingModeRef.current !== cameraFacingMode) {
+      prevCameraFacingModeRef.current = cameraFacingMode;
+      if (feedSourceRef.current === 'camera') {
+        startCamera(cameraFacingMode);
+      }
+    }
+  }, [cameraFacingMode]);
 
   // Start recording the video feed
   const startRecording = () => {
@@ -2144,7 +2158,8 @@ export function PoseDetector({
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
-                className="w-full h-full object-contain cursor-crosshair bg-slate-950"
+                className="w-full h-full object-contain cursor-crosshair bg-slate-950 transition-transform duration-150"
+                style={{ transform: `scale(${cameraZoom})` }}
                 title={appMode === 'pitching' ? "Drag the strike zone or its corners to calibrate, and tap to plot pitches" : "Pitching mechanics live stream"}
               />
             </div>
@@ -2420,30 +2435,9 @@ export function PoseDetector({
 
           {/* Bottom Floating Heads-Up Control Bar */}
           <div className="absolute bottom-20 md:bottom-4 left-2 right-2 md:left-4 md:right-4 z-20 flex flex-col lg:flex-row items-center justify-between gap-2.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 p-2.5 md:p-3 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)]">
-            {/* Left: Input view alignment selector */}
-            {setCameraView ? (
-              <div className="flex items-center gap-1.5 w-full lg:w-auto bg-slate-900/80 p-1 rounded-lg border border-slate-800 shrink-0">
-                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider px-2 hidden sm:inline">View:</span>
-                {(['side', 'back', 'front'] as const).map((view) => (
-                  <button
-                    key={view}
-                    onClick={() => setCameraView(view)}
-                    className={`px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider rounded transition-colors flex-1 lg:flex-none ${
-                      cameraView === view 
-                        ? 'bg-sky-500 text-white shadow-md' 
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                    }`}
-                  >
-                    {view}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="hidden lg:block lg:w-1" />
-            )}
-
-            {/* Center: Playback controls for Video Sources */}
-            {feedSource !== 'camera' ? (
+            {/* Center: Playback controls for Video Sources - camera view alignment and
+                lens switching now live in the off-canvas Settings > Camera tab */}
+            {feedSource !== 'camera' && (
               <div className="flex flex-col gap-2 w-full lg:max-w-md bg-slate-900/85 px-3 py-2 sm:py-1.5 rounded-xl border border-slate-800/80">
                 <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
                   {/* Playback Buttons Group */}
@@ -2553,17 +2547,6 @@ export function PoseDetector({
                       </button>
                     )}
                   </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center gap-2 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-800 shrink-0">
-                <button
-                  onClick={toggleCameraFacingMode}
-                  className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition-colors bg-sky-600/20 border border-sky-500/30 text-sky-300 hover:bg-sky-500/20"
-                  title="Switch between front and back camera lenses"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>Camera: {cameraFacingMode === 'user' ? 'Front (Selfie)' : 'Back (Rear)'}</span>
-                </button>
               </div>
             )}
 
