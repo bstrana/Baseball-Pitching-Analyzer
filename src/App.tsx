@@ -214,7 +214,7 @@ export default function App() {
   const [strikeZoneLocked, setStrikeZoneLocked] = useState(false);
   // Shows/hides the MPH label on plotted pitches (video canvas + Interactive PitchCast)
   const [showPitchSpeeds, setShowPitchSpeeds] = useState(true);
-  const [currentPitchType, setCurrentPitchType] = useState<PitchType>('Fastball');
+  const [currentPitchType, setCurrentPitchType] = useState<PitchType>('Four-Seam Fastball');
   const [currentPitchSpeed, setCurrentPitchSpeed] = useState<number>(92);
   const [selectedPitchId, setSelectedPitchId] = useState<string | null>(null);
   // Target Mode: a draggable target circle placed before each pitch, graded

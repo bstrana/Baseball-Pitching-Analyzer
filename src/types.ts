@@ -1,14 +1,50 @@
 export type PitchType =
-  | 'Fastball'
+  | 'Four-Seam Fastball'
+  | 'Two-Seam Fastball'
+  | 'Cutter'
+  | 'Changeup'
   | 'Curveball'
   | 'Slider'
-  | 'Changeup'
-  | 'Cutter'
-  | 'Sinker'
+  | 'Slurve'
+  | 'Sweeper'
   | 'Splitter'
-  | 'Knuckleball'
   | 'Forkball'
-  | 'Screwball';
+  | 'Knuckleball';
+
+export type PitchCategory = 'Fastball' | 'Off-Speed' | 'Breaking Ball';
+
+export interface PitchTypeInfo {
+  abbreviation: string;
+  category: PitchCategory;
+  hexColor: string;
+  // Tailwind classes for colored badges - kept as literal strings (not
+  // built from hexColor at runtime) so Tailwind's scanner can see them.
+  badgeClass: string;
+}
+
+// Single source of truth for pitch type metadata, shared by the pitch type
+// selector, session log, legend, and canvas markers.
+export const PITCH_TYPE_INFO: Record<PitchType, PitchTypeInfo> = {
+  'Four-Seam Fastball': { abbreviation: 'FF', category: 'Fastball', hexColor: '#ef4444', badgeClass: 'bg-red-500 text-white border-red-400' },
+  'Two-Seam Fastball': { abbreviation: 'FT', category: 'Fastball', hexColor: '#ec4899', badgeClass: 'bg-pink-500 text-white border-pink-400' },
+  'Cutter': { abbreviation: 'FC', category: 'Fastball', hexColor: '#a855f7', badgeClass: 'bg-purple-500 text-white border-purple-400' },
+  'Changeup': { abbreviation: 'CH', category: 'Off-Speed', hexColor: '#10b981', badgeClass: 'bg-emerald-500 text-white border-emerald-400' },
+  'Curveball': { abbreviation: 'CB', category: 'Breaking Ball', hexColor: '#3b82f6', badgeClass: 'bg-blue-500 text-white border-blue-400' },
+  'Slider': { abbreviation: 'SL', category: 'Breaking Ball', hexColor: '#f59e0b', badgeClass: 'bg-amber-500 text-white border-amber-400' },
+  'Slurve': { abbreviation: 'SV', category: 'Breaking Ball', hexColor: '#8b5cf6', badgeClass: 'bg-violet-500 text-white border-violet-400' },
+  'Sweeper': { abbreviation: 'SW', category: 'Breaking Ball', hexColor: '#14b8a6', badgeClass: 'bg-teal-500 text-white border-teal-400' },
+  'Splitter': { abbreviation: 'SF', category: 'Off-Speed', hexColor: '#06b6d4', badgeClass: 'bg-cyan-500 text-white border-cyan-400' },
+  'Forkball': { abbreviation: 'FO', category: 'Off-Speed', hexColor: '#f97316', badgeClass: 'bg-orange-500 text-white border-orange-400' },
+  'Knuckleball': { abbreviation: 'KN', category: 'Off-Speed', hexColor: '#84cc16', badgeClass: 'bg-lime-500 text-white border-lime-400' },
+};
+
+// Canonical display order: fastballs, then breaking balls, then off-speed -
+// matches how pitchers typically build a repertoire.
+export const PITCH_TYPES: PitchType[] = [
+  'Four-Seam Fastball', 'Two-Seam Fastball', 'Cutter',
+  'Curveball', 'Slider', 'Slurve', 'Sweeper',
+  'Changeup', 'Splitter', 'Forkball', 'Knuckleball',
+];
 
 export type PitcherHandedness = 'right' | 'left';
 

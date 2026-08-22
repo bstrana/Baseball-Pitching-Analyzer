@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn } from 'lucide-react';
-import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, classifyPitch, classifyMiss, getTargetZoneLabel } from '../types';
+import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, PITCH_TYPE_INFO, classifyPitch, classifyMiss, getTargetZoneLabel } from '../types';
 
 // Required to initialize the WebGL backend
 import '@tensorflow/tfjs-backend-webgl';
@@ -13,20 +13,7 @@ const getDistance = (x1: number, y1: number, x2: number, y2: number) => {
 
 const FEET_PER_METER = 3.28084;
 
-const PITCH_TYPE_COLORS: Record<PitchType, string> = {
-  Fastball: '#ef4444',
-  Curveball: '#3b82f6',
-  Slider: '#f59e0b',
-  Changeup: '#10b981',
-  Cutter: '#a855f7',
-  Sinker: '#ec4899',
-  Splitter: '#06b6d4',
-  Knuckleball: '#84cc16',
-  Forkball: '#f97316',
-  Screwball: '#6366f1',
-};
-
-const getPitchTypeColor = (type: PitchType): string => PITCH_TYPE_COLORS[type] || '#64748b';
+const getPitchTypeColor = (type: PitchType): string => PITCH_TYPE_INFO[type].hexColor;
 
 export interface PoseMetrics {
   rightArmAngle: number;
