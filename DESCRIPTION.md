@@ -17,6 +17,6 @@ pose detection running entirely in the browser.
 * All video processing happens client-side in the visitor's browser — no video
   or pose data is uploaded to or stored on the server.
 * The app requires camera access; grant the browser permission when prompted.
-* This app does not have its own login system. Anyone who can reach the app's
-  URL can use it — use Cloudron's access control settings if you need to
-  restrict access to specific users or groups.
+* Sign-in is required via Keycloak. Configure the connection in
+  `/app/data/config.env` after install (see the post-install message) - the
+  app won't load until that's set up.
