@@ -1974,6 +1974,10 @@ export function PoseDetector({
 
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     if (e.touches.length === 0) return;
+    // Without this, the browser follows up a tap with synthesized
+    // mousedown/mouseup/click events ~300ms later, which would fire the
+    // mouse handlers below too and log every tapped pitch twice.
+    e.preventDefault();
     const touch = e.touches[0];
     pressPosRef.current = { x: touch.clientX, y: touch.clientY };
     handleStart(touch.clientX, touch.clientY);
@@ -1987,6 +1991,7 @@ export function PoseDetector({
 
   const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
     if (!pressPosRef.current) return;
+    e.preventDefault();
     const touch = e.changedTouches[0];
     const moveDist = Math.sqrt((touch.clientX - pressPosRef.current.x) ** 2 + (touch.clientY - pressPosRef.current.y) ** 2);
     const wasClick = moveDist < 10;
@@ -2285,11 +2290,9 @@ export function PoseDetector({
               </span>
             </div>
 
-            {appMode === 'pitching' && showStrikeZoneRef.current && (
+            {appMode === 'pitching' && showStrikeZoneRef.current && !strikeZoneLocked && (
               <div className="px-2.5 py-1 bg-rose-500/10 border border-rose-500/30 rounded text-[9px] text-rose-400 font-mono tracking-wide uppercase shadow shadow-rose-950/25">
-                {strikeZoneLocked
-                  ? '✓ Zone locked – click/tap anywhere to plot pitch'
-                  : '✦ Drag zone / corners to calibrate; click/tap to plot pitch'}
+                ✦ Drag zone / corners to calibrate; click/tap to plot pitch
               </div>
             )}
           </div>
