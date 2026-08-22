@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, Settings, Download, LogOut } from 'lucide-react';
-import { keycloak, keycloakEnabled } from '../auth';
+import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical } from 'lucide-react';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, classifyPitch } from '../types';
 
 // Required to initialize the WebGL backend
@@ -11,6 +10,8 @@ import '@tensorflow/tfjs-backend-webgl';
 const getDistance = (x1: number, y1: number, x2: number, y2: number) => {
   return Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
 };
+
+const FEET_PER_METER = 3.28084;
 
 export interface PoseMetrics {
   rightArmAngle: number;
@@ -67,11 +68,13 @@ interface PoseDetectorProps {
   appMode?: 'mechanics' | 'pitching';
   onConfigChange?: (config: StrikeZoneConfig) => void;
 
-  // Session menu actions (session setup modal, export, sign out) - surfaced
-  // from a canvas-overlay menu instead of the top nav bar
-  onOpenSessionSetup?: () => void;
-  onExportSession?: () => void;
-  onExportCSV?: () => void;
+  // Distance calibration & measurement
+  measureMode?: 'none' | 'calibrate' | 'measure';
+  onMeasureModeChange?: (mode: 'none' | 'calibrate' | 'measure') => void;
+  pixelsPerFoot?: number | null;
+  onCalibrationPixelDistance?: (pixelDistance: number) => void;
+  onMeasurementComplete?: (feet: number) => void;
+  measurementUnit?: 'ft' | 'm';
 }
 
 export function PoseDetector({
@@ -95,15 +98,18 @@ export function PoseDetector({
   setCameraView,
   appMode = 'mechanics',
   onConfigChange,
-  onOpenSessionSetup,
-  onExportSession,
-  onExportCSV
+  measureMode = 'none',
+  onMeasureModeChange,
+  pixelsPerFoot,
+  onCalibrationPixelDistance,
+  onMeasurementComplete,
+  measurementUnit = 'ft'
 }: PoseDetectorProps) {
-  const [showTopMenu, setShowTopMenu] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [showSourceMenu, setShowSourceMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
@@ -216,6 +222,22 @@ export function PoseDetector({
   const activeDrawToolRef = useRef(activeDrawTool);
   const activeDrawColorRef = useRef(activeDrawColor);
 
+  // Distance calibration / measurement - click-drag two points, same interaction
+  // as the telestrator 'line' tool. In 'calibrate' mode the pixel distance is
+  // reported up so a known real-world reference distance can convert it into a
+  // pixels-per-foot scale; in 'measure' mode that scale converts the drawn
+  // distance into feet directly on the canvas.
+  const [measurePoints, setMeasurePoints] = useState<{ x: number; y: number }[]>([]);
+  const [measureResult, setMeasureResult] = useState<{ points: { x: number; y: number }[]; pixelDistance: number } | null>(null);
+  const measureModeRef = useRef(measureMode);
+  const measurePointsRef = useRef(measurePoints);
+  const measureResultRef = useRef(measureResult);
+  const pixelsPerFootRef = useRef(pixelsPerFoot);
+  const onMeasureModeChangeRef = useRef(onMeasureModeChange);
+  const onCalibrationPixelDistanceRef = useRef(onCalibrationPixelDistance);
+  const onMeasurementCompleteRef = useRef(onMeasurementComplete);
+  const measurementUnitRef = useRef(measurementUnit);
+
   useEffect(() => {
     strikeZoneConfigRef.current = strikeZoneConfig;
     showStrikeZoneRef.current = showStrikeZone;
@@ -236,7 +258,16 @@ export function PoseDetector({
     activeDrawingRef.current = activeDrawing;
     activeDrawToolRef.current = activeDrawTool;
     activeDrawColorRef.current = activeDrawColor;
-    
+
+    measureModeRef.current = measureMode;
+    measurePointsRef.current = measurePoints;
+    measureResultRef.current = measureResult;
+    pixelsPerFootRef.current = pixelsPerFoot;
+    onMeasureModeChangeRef.current = onMeasureModeChange;
+    onCalibrationPixelDistanceRef.current = onCalibrationPixelDistance;
+    onMeasurementCompleteRef.current = onMeasurementComplete;
+    measurementUnitRef.current = measurementUnit;
+
     // If we've got visual state changes while the video is paused or stopped,
     // request a single frame redraw to render the updates immediately.
     const isVideoStopped = videoRef.current && (videoRef.current.paused || videoRef.current.ended);
@@ -1070,6 +1101,9 @@ export function PoseDetector({
       // Render custom annotations (telestrator drawing lines)
       drawAnnotations(ctx, canvas.width, canvas.height);
 
+      // Render the calibration/measurement line, if any
+      drawMeasurement(ctx, canvas.width, canvas.height);
+
       // Reset single frame request flag after drawing
       singleFrameAnalyzeRequestedRef.current = false;
 
@@ -1174,7 +1208,15 @@ export function PoseDetector({
         undoDrawing();
         return;
       }
-      
+
+      // Escape cancels an in-progress calibration/measurement
+      if (e.key === 'Escape' && measureModeRef.current !== 'none') {
+        e.preventDefault();
+        setMeasurePoints([]);
+        onMeasureModeChangeRef.current?.('none');
+        return;
+      }
+
       if (feedSourceRef.current === 'camera') return;
       
       switch (e.key) {
@@ -1358,6 +1400,65 @@ export function PoseDetector({
     });
   };
 
+  // Draws the in-progress calibration/measurement drag, or the last completed
+  // measurement result, as a dashed line with an endpoint-to-endpoint distance
+  // label (in feet once calibrated, otherwise raw pixels).
+  const drawMeasurement = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const pts = measurePointsRef.current.length === 2
+      ? measurePointsRef.current
+      : measureResultRef.current?.points ?? null;
+    if (!pts || pts.length < 2) return;
+
+    const sx = pts[0].x * width;
+    const sy = pts[0].y * height;
+    const ex = pts[1].x * width;
+    const ey = pts[1].y * height;
+    const pixelDistance = Math.sqrt((ex - sx) ** 2 + (ey - sy) ** 2);
+
+    const color = measureModeRef.current === 'calibrate' ? '#f59e0b' : '#38bdf8';
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    [[sx, sy], [ex, ey]].forEach(([x, y]) => {
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+    });
+
+    let label: string;
+    if (measureModeRef.current === 'calibrate') {
+      label = `${pixelDistance.toFixed(0)} px`;
+    } else if (pixelsPerFootRef.current) {
+      const feet = pixelDistance / pixelsPerFootRef.current;
+      label = measurementUnitRef.current === 'm'
+        ? `${(feet / FEET_PER_METER).toFixed(2)} m`
+        : `${feet.toFixed(2)} ft`;
+    } else {
+      label = `${pixelDistance.toFixed(0)} px (not calibrated)`;
+    }
+
+    const midX = (sx + ex) / 2;
+    const midY = (sy + ey) / 2;
+    ctx.font = 'bold 14px "JetBrains Mono", monospace';
+    const textWidth = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.85)';
+    ctx.fillRect(midX - textWidth / 2 - 6, midY - 12, textWidth + 12, 22);
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, midX, midY - 1);
+    ctx.restore();
+  };
+
   const undoDrawing = () => {
     setDrawings(prev => prev.slice(0, -1));
     singleFrameAnalyzeRequestedRef.current = true;
@@ -1525,6 +1626,18 @@ export function PoseDetector({
 
   // Handle dragging and clicking on the canvas
   const handleStart = (clientX: number, clientY: number) => {
+    if (measureModeRef.current !== 'none') {
+      const layout = getCanvasLayout();
+      if (!layout) return;
+      const clickX = clientX - layout.rect.left;
+      const clickY = clientY - layout.rect.top;
+      const px = Math.max(0, Math.min(1, (clickX - layout.offsetX) / layout.drawnWidth));
+      const py = Math.max(0, Math.min(1, (clickY - layout.offsetY) / layout.drawnHeight));
+      setMeasurePoints([{ x: px, y: py }]);
+      singleFrameAnalyzeRequestedRef.current = true;
+      return;
+    }
+
     const drawTool = activeDrawToolRef.current;
     if (drawTool !== 'none') {
       const layout = getCanvasLayout();
@@ -1586,6 +1699,20 @@ export function PoseDetector({
   };
 
   const handleMove = (clientX: number, clientY: number) => {
+    if (measureModeRef.current !== 'none') {
+      if (measurePointsRef.current.length === 1) {
+        const layout = getCanvasLayout();
+        if (!layout) return;
+        const clickX = clientX - layout.rect.left;
+        const clickY = clientY - layout.rect.top;
+        const px = Math.max(0, Math.min(1, (clickX - layout.offsetX) / layout.drawnWidth));
+        const py = Math.max(0, Math.min(1, (clickY - layout.offsetY) / layout.drawnHeight));
+        setMeasurePoints([measurePointsRef.current[0], { x: px, y: py }]);
+        singleFrameAnalyzeRequestedRef.current = true;
+      }
+      return;
+    }
+
     const drawTool = activeDrawToolRef.current;
     if (drawTool !== 'none') {
       const layout = getCanvasLayout();
@@ -1715,6 +1842,31 @@ export function PoseDetector({
   };
 
   const handleEnd = (clientX: number, clientY: number, wasClick: boolean) => {
+    if (measureModeRef.current !== 'none') {
+      const pts = measurePointsRef.current;
+      if (pts.length === 2) {
+        const canvas = canvasRef.current;
+        const w = canvas?.width || 0;
+        const h = canvas?.height || 0;
+        const dx = (pts[1].x - pts[0].x) * w;
+        const dy = (pts[1].y - pts[0].y) * h;
+        const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+
+        if (measureModeRef.current === 'calibrate') {
+          onCalibrationPixelDistanceRef.current?.(pixelDistance);
+        } else {
+          setMeasureResult({ points: pts, pixelDistance });
+          if (pixelsPerFootRef.current) {
+            onMeasurementCompleteRef.current?.(pixelDistance / pixelsPerFootRef.current);
+          }
+        }
+        onMeasureModeChangeRef.current?.('none');
+      }
+      setMeasurePoints([]);
+      singleFrameAnalyzeRequestedRef.current = true;
+      return;
+    }
+
     const drawTool = activeDrawToolRef.current;
     if (drawTool !== 'none') {
       if (activeDrawingRef.current && activeDrawingRef.current.points.length >= 2) {
@@ -2028,6 +2180,25 @@ export function PoseDetector({
             )}
           </div>
 
+          {/* Calibration / Measurement hint banner - only shown while actively picking two points */}
+          {measureMode !== 'none' && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 px-3.5 py-2 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-lg shadow-lg">
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${measureMode === 'calibrate' ? 'text-amber-300' : 'text-sky-300'}`}>
+                {measureMode === 'calibrate' ? 'Calibrating' : 'Measuring'}: click and drag across a known distance
+              </span>
+              <button
+                onClick={() => {
+                  setMeasurePoints([]);
+                  onMeasureModeChange?.('none');
+                }}
+                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                title="Cancel (Esc)"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* Telestrator Toggle Button - the drawing tools stay off-canvas until called on demand */}
           <button
             onClick={() => {
@@ -2205,8 +2376,8 @@ export function PoseDetector({
               <button
                 onClick={() => setShowSkeleton(!showSkeleton)}
                 className={`p-2 rounded-lg border backdrop-blur-md transition-all shadow-lg flex items-center justify-center ${
-                  showSkeleton 
-                    ? 'bg-sky-500/20 border-sky-500/50 text-sky-300' 
+                  showSkeleton
+                    ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
                     : 'bg-black/70 border-slate-700/50 text-slate-400 hover:text-white'
                 }`}
                 title="Toggle Skeleton Tracking overlay"
@@ -2220,8 +2391,8 @@ export function PoseDetector({
               <button
                 onClick={() => setShowTrajectory(!showTrajectory)}
                 className={`p-2 rounded-lg border backdrop-blur-md transition-all shadow-lg flex items-center justify-center ${
-                  showTrajectory 
-                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-300' 
+                  showTrajectory
+                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
                     : 'bg-black/70 border-slate-700/50 text-slate-400 hover:text-white'
                 }`}
                 title="Toggle Motion Trajectory overlay"
@@ -2244,69 +2415,6 @@ export function PoseDetector({
                 <Target className="w-4 h-4" />
                 <span className="text-[9px] font-bold uppercase tracking-wider ml-1 hidden sm:inline">Strike Zone</span>
               </button>
-            )}
-
-            {(onOpenSessionSetup || onExportSession || onExportCSV) && (
-              <div className="relative">
-                <button
-                  onClick={() => setShowTopMenu(v => !v)}
-                  className={`p-2 rounded-lg border backdrop-blur-md transition-all shadow-lg flex items-center justify-center ${
-                    showTopMenu
-                      ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
-                      : 'bg-black/70 border-slate-700/50 text-slate-400 hover:text-white'
-                  }`}
-                  title="Session menu"
-                >
-                  <MoreVertical className="w-4 h-4" />
-                </button>
-
-                {showTopMenu && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-40 bg-black/5"
-                      onClick={() => setShowTopMenu(false)}
-                    />
-                    <div className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl py-1 z-50">
-                      {onOpenSessionSetup && (
-                        <button
-                          onClick={() => { onOpenSessionSetup(); setShowTopMenu(false); }}
-                          className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
-                        >
-                          <Settings className="w-4 h-4 text-sky-400 shrink-0" />
-                          <span className="font-semibold">Session Setup</span>
-                        </button>
-                      )}
-                      {onExportSession && (
-                        <button
-                          onClick={() => { onExportSession(); setShowTopMenu(false); }}
-                          className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
-                        >
-                          <Download className="w-4 h-4 text-sky-400 shrink-0" />
-                          <span className="font-semibold">Export Session (JSON)</span>
-                        </button>
-                      )}
-                      {onExportCSV && (
-                        <button
-                          onClick={() => { onExportCSV(); setShowTopMenu(false); }}
-                          className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
-                        >
-                          <Download className="w-4 h-4 text-emerald-400 shrink-0" />
-                          <span className="font-semibold">Export Pitch Log (CSV)</span>
-                        </button>
-                      )}
-                      {keycloakEnabled && (
-                        <button
-                          onClick={() => { setShowTopMenu(false); keycloak!.logout(); }}
-                          className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5 border-t border-slate-800/60 mt-1 pt-2.5"
-                        >
-                          <LogOut className="w-4 h-4 text-slate-400 shrink-0" />
-                          <span className="font-semibold">Sign Out</span>
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
             )}
           </div>
 
@@ -2489,29 +2597,49 @@ export function PoseDetector({
                 <span>Replays ({recordings.length})</span>
               </button>
 
-              {/* Start Webcam Button */}
-              <button
-                onClick={startCamera}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider text-white shadow-lg ${
-                  feedSource === 'camera'
-                    ? 'bg-sky-600 border-sky-500 shadow-[0_0_15px_rgba(2,132,199,0.4)]'
-                    : 'bg-black/50 border-slate-800 hover:bg-black/75'
-                }`}
-                title="Start live webcam streaming"
-              >
-                <Camera className="w-3.5 h-3.5" />
-                <span>Webcam</span>
-              </button>
+              {/* Video Source Menu - Webcam / Upload */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowSourceMenu(v => !v)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider text-white shadow-lg ${
+                    showSourceMenu
+                      ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                      : 'bg-black/50 border-slate-800 hover:bg-black/75'
+                  }`}
+                  title="Video source"
+                >
+                  {feedSource === 'camera' ? <Camera className="w-3.5 h-3.5" /> : <Upload className="w-3.5 h-3.5" />}
+                  <span>Source</span>
+                  <MoreVertical className="w-3 h-3" />
+                </button>
 
-              {/* Upload video file */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/50 hover:bg-black/75 backdrop-blur-md border border-slate-800 text-white rounded-lg transition-all text-[11px] font-bold uppercase tracking-wider"
-                title="Upload custom pitching video file"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Upload</span>
-              </button>
+                {showSourceMenu && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40 bg-black/5"
+                      onClick={() => setShowSourceMenu(false)}
+                    />
+                    <div className="absolute bottom-full mb-2 right-0 w-48 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl py-1 z-50">
+                      <button
+                        onClick={() => { startCamera(); setShowSourceMenu(false); }}
+                        className={`w-full text-left px-3.5 py-2.5 text-xs transition-colors flex items-center gap-2.5 ${
+                          feedSource === 'camera' ? 'text-sky-300' : 'text-slate-200 hover:bg-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <Camera className="w-4 h-4 shrink-0" />
+                        <span className="font-semibold">Webcam</span>
+                      </button>
+                      <button
+                        onClick={() => { fileInputRef.current?.click(); setShowSourceMenu(false); }}
+                        className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
+                      >
+                        <Upload className="w-4 h-4 shrink-0" />
+                        <span className="font-semibold">Upload Video</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Snapshot image */}
               <button

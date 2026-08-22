@@ -3,17 +3,31 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { keycloak, keycloakEnabled } from './auth';
+
+const FEET_PER_METER = 3.28084;
 
 export default function App() {
   const [showSetupModal, setShowSetupModal] = useState(false);
-  const [activeModalTab, setActiveModalTab] = useState<'profile' | 'camera' | 'overlays' | 'guide'>('profile');
+  const [activeModalTab, setActiveModalTab] = useState<'profile' | 'camera' | 'overlays' | 'calibration' | 'guide'>('profile');
   const [pitcherProfile, setPitcherProfile] = useState({
     height: 74,
     weight: 210,
     wingspan: 75
   });
+
+  // Distance calibration & measurement: click-drag two points across a known
+  // real-world distance to establish a pixels-per-foot scale, then use that
+  // scale to measure any other on-screen distance. pixelsPerFoot and
+  // lastMeasuredFeet are always stored in feet as the canonical unit;
+  // calibrationUnit only controls how values are entered/displayed.
+  const [calibrationUnit, setCalibrationUnit] = useState<'ft' | 'm'>('ft');
+  const [referenceDistanceValue, setReferenceDistanceValue] = useState(60.5); // mound-to-plate default, in calibrationUnit
+  const [pixelsPerFoot, setPixelsPerFoot] = useState<number | null>(null);
+  const [measureMode, setMeasureMode] = useState<'none' | 'calibrate' | 'measure'>('none');
+  const [lastMeasuredFeet, setLastMeasuredFeet] = useState<number | null>(null);
 
   const [metrics, setMetrics] = useState<PoseMetrics>({ 
     rightArmAngle: 0, 
@@ -41,6 +55,9 @@ export default function App() {
 
   // Live Metrics / Kinematic Sequence panel - collapsed by default, opened from the thin footer bar
   const [showMetricsPanel, setShowMetricsPanel] = useState(false);
+
+  // Session menu (Session Setup / Export / Sign out) - far right of the top bar, all screen sizes
+  const [showSessionMenu, setShowSessionMenu] = useState(false);
 
   // Active Mode: 'mechanics' or 'pitching'
   const [appMode, setAppMode] = useState<'mechanics' | 'pitching'>('mechanics');
@@ -127,28 +144,30 @@ export default function App() {
           setAppMode('mechanics');
           setActiveMobileTab('feed');
         }}
-        className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
+        className={`px-2 sm:px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-1 sm:gap-2 ${
           appMode === 'mechanics'
             ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/20 font-extrabold'
             : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
         }`}
       >
         <Activity className="w-4 h-4" />
-        <span>Mechanics Tracker</span>
+        <span className="hidden sm:inline">Mechanics Tracker</span>
+        <span className="sm:hidden">Mech</span>
       </button>
       <button
         onClick={() => {
           setAppMode('pitching');
           setActiveMobileTab('feed');
         }}
-        className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
+        className={`px-2 sm:px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-1 sm:gap-2 ${
           appMode === 'pitching'
             ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20 font-extrabold'
             : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
         }`}
       >
         <Target className="w-4 h-4" />
-        <span>Pitch Tracker</span>
+        <span className="hidden sm:inline">Pitch Tracker</span>
+        <span className="sm:hidden">Pitch</span>
       </button>
     </div>
   );
@@ -164,26 +183,76 @@ export default function App() {
           <div className="h-6 w-px bg-slate-700 mx-1 sm:mx-2 hidden sm:block"></div>
           <span className="text-[10px] sm:text-xs font-mono px-2 py-1 bg-slate-800 rounded border border-slate-700 text-sky-400 hidden sm:inline-block">TENSORFLOW READY</span>
         </div>
-        {/* Mode Selector - hidden below sm, shown in the small-screens row instead */}
-        <div className="hidden sm:flex">{modeSelector}</div>
+        {/* Mode Selector - always in the top bar, between logo and session menu */}
+        <div className="flex">{modeSelector}</div>
 
         <div className="flex items-center gap-3 sm:gap-4 font-sans">
           <div className="flex items-center gap-2 hidden md:flex">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
             <span className="text-xs text-slate-400 uppercase tracking-widest font-sans">Live Feed • 60 FPS</span>
           </div>
+
+          <div className="relative">
+            <button
+              onClick={() => setShowSessionMenu(v => !v)}
+              title="Session menu"
+              className={`p-1.5 sm:p-2 rounded-md border transition-all cursor-pointer ${
+                showSessionMenu
+                  ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                  : 'bg-slate-850 hover:bg-slate-800 border-slate-700 text-slate-200'
+              }`}
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+
+            {showSessionMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-40 bg-black/5"
+                  onClick={() => setShowSessionMenu(false)}
+                />
+                <div className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl py-1 z-50">
+                  <button
+                    onClick={() => { setShowSetupModal(true); setShowSessionMenu(false); }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
+                  >
+                    <Settings className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span className="font-semibold">Session Setup</span>
+                  </button>
+                  <button
+                    onClick={() => { handleExportSession(); setShowSessionMenu(false); }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
+                  >
+                    <Download className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span className="font-semibold">Export Session (JSON)</span>
+                  </button>
+                  <button
+                    onClick={() => { handleExportCSV(); setShowSessionMenu(false); }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
+                  >
+                    <Download className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="font-semibold">Export Pitch Log (CSV)</span>
+                  </button>
+                  {keycloakEnabled && (
+                    <button
+                      onClick={() => { setShowSessionMenu(false); keycloak!.logout(); }}
+                      className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5 border-t border-slate-800/60 mt-1 pt-2.5"
+                    >
+                      <LogOut className="w-4 h-4 text-slate-400 shrink-0" />
+                      <span className="font-semibold">Sign Out</span>
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </nav>
-
-      {/* Mode Selector - small screens only, doesn't fit in the top bar */}
-      <div className="sm:hidden bg-slate-900 border-b border-slate-800 px-4 py-2 flex justify-center shrink-0 z-20">
-        {modeSelector}
-      </div>
 
       <div className="flex flex-1 overflow-hidden flex-col lg:flex-row relative">
         
         {/* Main Content: Video Feed & Metrics */}
-        <main className={`flex-1 flex flex-col bg-slate-950 overflow-hidden ${appMode === 'mechanics' || activeMobileTab === 'feed' ? 'flex h-full' : 'hidden lg:flex'}`}>
+        <main className={`flex-1 flex flex-col bg-slate-950 overflow-hidden pb-20 lg:pb-0 ${appMode === 'mechanics' || activeMobileTab === 'feed' ? 'flex h-full' : 'hidden lg:flex'}`}>
           
           {/* Video Feed Area */}
           <div className="flex-1 relative bg-black flex items-center justify-center p-0 lg:p-4 min-h-0">
@@ -210,16 +279,22 @@ export default function App() {
                  setCameraView={setCameraView}
                  appMode={appMode}
                  visibleMarkers={visibleMarkers}
-                 onOpenSessionSetup={() => setShowSetupModal(true)}
-                 onExportSession={handleExportSession}
-                 onExportCSV={handleExportCSV}
+                 measureMode={measureMode}
+                 onMeasureModeChange={setMeasureMode}
+                 pixelsPerFoot={pixelsPerFoot}
+                 onCalibrationPixelDistance={(pixelDistance) => {
+                   const referenceDistanceFeet = calibrationUnit === 'ft' ? referenceDistanceValue : referenceDistanceValue * FEET_PER_METER;
+                   setPixelsPerFoot(pixelDistance / referenceDistanceFeet);
+                 }}
+                 onMeasurementComplete={setLastMeasuredFeet}
+                 measurementUnit={calibrationUnit}
                />
             </div>
           </div>
 
           {/* Bottom Analysis and Metrics Section - collapsed by default, opened from the thin bar below */}
           {appMode === 'mechanics' && (
-            <div className="hidden lg:flex flex-col bg-slate-900 border-t border-slate-800 shrink-0">
+            <div className="flex flex-col bg-slate-900 border-t border-slate-800 shrink-0">
               <button
                 onClick={() => setShowMetricsPanel(v => !v)}
                 className="h-9 px-4 flex items-center justify-between text-slate-400 hover:text-slate-200 transition-colors shrink-0 cursor-pointer"
@@ -440,6 +515,17 @@ export default function App() {
                   <span>Overlays</span>
                 </button>
                 <button
+                  onClick={() => setActiveModalTab('calibration')}
+                  className={`flex-1 py-2 text-xs font-semibold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${
+                    activeModalTab === 'calibration'
+                      ? 'bg-slate-800 text-sky-400 shadow font-bold'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/40'
+                  }`}
+                >
+                  <Ruler className="w-3.5 h-3.5" />
+                  <span>Calibration</span>
+                </button>
+                <button
                   onClick={() => setActiveModalTab('guide')}
                   className={`flex-1 py-2 text-xs font-semibold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${
                     activeModalTab === 'guide'
@@ -614,6 +700,127 @@ export default function App() {
                         </button>
                       </div>
                       <p className="text-[11px] text-slate-400">Generate a high-frequency velocity tail displaying hand acceleration vectors throughout the throw cycle.</p>
+                    </div>
+                  </div>
+                )}
+
+                {activeModalTab === 'calibration' && (
+                  <div className="space-y-4">
+                    <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Distance Calibration</h4>
+                        <div className="flex items-center bg-slate-800/80 rounded-lg border border-slate-700/60 p-0.5">
+                          <button
+                            onClick={() => {
+                              if (calibrationUnit !== 'ft') {
+                                setReferenceDistanceValue(v => Math.round(v * FEET_PER_METER * 100) / 100);
+                                setCalibrationUnit('ft');
+                              }
+                            }}
+                            className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-colors cursor-pointer ${
+                              calibrationUnit === 'ft' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            US (ft)
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (calibrationUnit !== 'm') {
+                                setReferenceDistanceValue(v => Math.round(v / FEET_PER_METER * 100) / 100);
+                                setCalibrationUnit('m');
+                              }
+                            }}
+                            className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-colors cursor-pointer ${
+                              calibrationUnit === 'm' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            Metric (m)
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mb-4">
+                        Set a known real-world distance (e.g. the 60'6" / 18.44m mound-to-plate distance, or a
+                        marked stride line), then draw over that same distance on the video to establish a
+                        pixel scale for measuring anything else on screen.
+                      </p>
+
+                      <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60 mb-3">
+                        <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">
+                          Reference Distance ({calibrationUnit === 'ft' ? 'feet' : 'meters'})
+                        </label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={referenceDistanceValue}
+                          onChange={(e) => setReferenceDistanceValue(parseFloat(e.target.value) || 0)}
+                          className="w-full bg-transparent text-white font-mono font-bold text-sm focus:outline-none"
+                        />
+                      </div>
+
+                      <div className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border mb-3 ${
+                        pixelsPerFoot
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                          : 'bg-slate-800/60 border-slate-700/60 text-slate-400'
+                      }`}>
+                        <Ruler className="w-4 h-4 shrink-0" />
+                        <span className="text-[11px] font-mono">
+                          {pixelsPerFoot
+                            ? calibrationUnit === 'ft'
+                              ? `Calibrated - ${pixelsPerFoot.toFixed(1)} px/ft`
+                              : `Calibrated - ${(pixelsPerFoot * FEET_PER_METER).toFixed(1)} px/m`
+                            : 'Not calibrated yet'}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setMeasureMode('calibrate');
+                          setShowSetupModal(false);
+                        }}
+                        disabled={referenceDistanceValue <= 0}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg transition-all cursor-pointer"
+                      >
+                        <Ruler className="w-3.5 h-3.5" />
+                        <span>{pixelsPerFoot ? 'Re-calibrate' : 'Start Calibration'}</span>
+                      </button>
+                      {pixelsPerFoot && (
+                        <button
+                          onClick={() => { setPixelsPerFoot(null); setLastMeasuredFeet(null); }}
+                          className="w-full mt-2 px-3 py-1.5 text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-wider transition-colors cursor-pointer"
+                        >
+                          Clear calibration
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                      <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-1">Measure a Distance</h4>
+                      <p className="text-[11px] text-slate-400 mb-4">
+                        Once calibrated, draw between any two points on the video to read off the real-world
+                        distance - stride length, release point height, whatever you need.
+                      </p>
+
+                      <button
+                        onClick={() => {
+                          setMeasureMode('measure');
+                          setShowSetupModal(false);
+                        }}
+                        disabled={!pixelsPerFoot}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg transition-all cursor-pointer"
+                      >
+                        <Ruler className="w-3.5 h-3.5" />
+                        <span>Measure Distance</span>
+                      </button>
+
+                      {lastMeasuredFeet !== null && (
+                        <p className="text-[11px] text-slate-400 mt-3 font-mono">
+                          Last measurement: <span className="text-sky-400 font-bold">
+                            {calibrationUnit === 'ft'
+                              ? `${lastMeasuredFeet.toFixed(2)} ft`
+                              : `${(lastMeasuredFeet / FEET_PER_METER).toFixed(2)} m`}
+                          </span>
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
