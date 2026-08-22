@@ -1,3 +1,19 @@
+## 1.1.3
+
+* Drop the fixed mobile bottom tab bar - Settings already lives in the top
+  bar's session menu, and the Pitch Accuracy Tracker panel now collapses
+  behind a thin toggle bar on mobile instead (same pattern as Live
+  Metrics).
+* Raise the top bar's stacking order so its session menu always renders
+  above the video canvas's overlays instead of risking being hidden
+  behind them.
+* Add a Camera Zoom slider (1x-3x) to Settings > Camera - the skeleton and
+  every overlay zoom together with the video since they're all part of
+  the same canvas.
+* Move the on-canvas camera view selector (Side/Back/Front) and the
+  front/rear camera lens toggle off the video canvas into Settings >
+  Camera, alongside a new "Camera Lens" control for switching lenses.
+
 ## 1.1.2
 
 * Further mobile/top-bar decluttering: the session menu now sits far right
