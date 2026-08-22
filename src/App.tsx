@@ -3,7 +3,7 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, ZoomIn } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, ZoomIn, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
 
@@ -59,6 +59,9 @@ export default function App() {
 
   // Digital camera zoom (1x - 3x), applied as a CSS scale on the video canvas
   const [cameraZoom, setCameraZoom] = useState(1);
+
+  // Which physical camera lens to use when on the live webcam feed
+  const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
 
   // Session menu (Session Setup / Export / Sign out) - far right of the top bar, all screen sizes
   const [showSessionMenu, setShowSessionMenu] = useState(false);
@@ -277,7 +280,6 @@ export default function App() {
                  setShowSkeleton={setShowSkeleton}
                  setShowTrajectory={setShowTrajectory}
                  setShowStrikeZone={setShowStrikeZone}
-                 setCameraView={setCameraView}
                  appMode={appMode}
                  visibleMarkers={visibleMarkers}
                  measureMode={measureMode}
@@ -290,6 +292,7 @@ export default function App() {
                  onMeasurementComplete={setLastMeasuredFeet}
                  measurementUnit={calibrationUnit}
                  cameraZoom={cameraZoom}
+                 cameraFacingMode={cameraFacingMode}
                />
             </div>
           </div>
@@ -592,6 +595,21 @@ export default function App() {
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                      <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-1">Camera Lens</h4>
+                      <p className="text-[11px] text-slate-400 mb-4">Switch between the front (selfie) and rear-facing lens on the live webcam feed.</p>
+
+                      <button
+                        onClick={() => setCameraFacingMode(m => m === 'user' ? 'environment' : 'user')}
+                        className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg border bg-slate-800 border-slate-700/60 text-slate-200 hover:bg-slate-750 transition-all cursor-pointer"
+                      >
+                        <span className="text-xs font-bold uppercase tracking-wider">
+                          Camera: {cameraFacingMode === 'user' ? 'Front (Selfie)' : 'Back (Rear)'}
+                        </span>
+                        <RefreshCw className="w-4 h-4 text-sky-400" />
+                      </button>
                     </div>
 
                     <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
