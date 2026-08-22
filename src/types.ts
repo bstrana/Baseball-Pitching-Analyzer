@@ -1,4 +1,14 @@
-export type PitchType = 'Fastball' | 'Curveball' | 'Slider' | 'Changeup' | 'Cutter' | 'Sinker';
+export type PitchType =
+  | 'Fastball'
+  | 'Curveball'
+  | 'Slider'
+  | 'Changeup'
+  | 'Cutter'
+  | 'Sinker'
+  | 'Splitter'
+  | 'Knuckleball'
+  | 'Forkball'
+  | 'Screwball';
 
 export interface KinematicFrame {
   time: number;

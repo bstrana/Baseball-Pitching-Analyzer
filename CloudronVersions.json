@@ -312,6 +312,45 @@
       "ts": "Sat, 22 Aug 2026 15:30:00 GMT",
       "publishState": "published",
       "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.2.0"
+    },
+    "1.2.1": {
+      "manifest": {
+        "id": "io.github.bstrana.baseball-pitching-analyzer",
+        "title": "Baseball Pitching Analyzer",
+        "author": "bstrana",
+        "description": "Real-time baseball pitching and swing mechanics analysis, powered by TensorFlow.js pose detection running entirely in the browser. Track pitching and hitting mechanics live from your webcam — all processing happens client-side in the browser. Sign-in via Keycloak is required. Player rosters and saved sessions are stored in a bundled PocketBase backend.",
+        "tagline": "Real-time baseball pitching & swing mechanics analysis",
+        "version": "1.2.1",
+        "manifestVersion": 2,
+        "minBoxVersion": "9.1.0",
+        "website": "https://github.com/bstrana/Baseball-Pitching-Analyzer",
+        "contactEmail": "tomislav.bosanac@gmail.com",
+        "healthCheckPath": "/health",
+        "httpPort": 8000,
+        "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.2.1",
+        "addons": {
+          "localstorage": {}
+        },
+        "icon": "file://appicon.png",
+        "iconUrl": "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/appicon.png",
+        "tags": [
+          "sports",
+          "baseball",
+          "video",
+          "analytics"
+        ],
+        "mediaLinks": [
+          "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/appicon.png"
+        ],
+        "changelog": "Pitch Tracker polish (drawing tool, log ordering/abbreviations, speed toggle, per-type breakdown, more pitch types, resizable sidebars), session counts in the player roster, an on-canvas player name overlay, and the analysis status indicator moved into the top bar.",
+        "postInstallMessage": "This app requires Keycloak sign-in. Create a client for this app in your Keycloak realm, then edit /app/data/config.env (KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID) and restart the app from the Cloudron dashboard. Until then, the app shows a 'sign-in not configured' message. Player rosters and saved sessions are stored in a bundled PocketBase backend - optionally set PB_ADMIN_EMAIL and PB_ADMIN_PASSWORD in the same config.env to reach its admin dashboard at this app's URL + /pb/_/.",
+        "packagerName": "bstrana",
+        "packagerUrl": "https://github.com/bstrana"
+      },
+      "creationDate": "Sat, 22 Aug 2026 17:00:00 GMT",
+      "ts": "Sat, 22 Aug 2026 17:00:00 GMT",
+      "publishState": "published",
+      "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.2.1"
     }
   }
 }

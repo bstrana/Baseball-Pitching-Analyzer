@@ -13,6 +13,21 @@ const getDistance = (x1: number, y1: number, x2: number, y2: number) => {
 
 const FEET_PER_METER = 3.28084;
 
+const PITCH_TYPE_COLORS: Record<PitchType, string> = {
+  Fastball: '#ef4444',
+  Curveball: '#3b82f6',
+  Slider: '#f59e0b',
+  Changeup: '#10b981',
+  Cutter: '#a855f7',
+  Sinker: '#ec4899',
+  Splitter: '#06b6d4',
+  Knuckleball: '#84cc16',
+  Forkball: '#f97316',
+  Screwball: '#6366f1',
+};
+
+const getPitchTypeColor = (type: PitchType): string => PITCH_TYPE_COLORS[type] || '#64748b';
+
 export interface PoseMetrics {
   rightArmAngle: number;
   leftArmAngle: number;
@@ -45,6 +60,7 @@ interface PoseDetectorProps {
   strikeZoneConfig: StrikeZoneConfig;
   showStrikeZone: boolean;
   strikeZoneLocked?: boolean;
+  showPitchSpeeds?: boolean;
   pitches: Pitch[];
   onAddPitch: (pitch: Pitch) => void;
   selectedPitchId: string | null;
@@ -62,7 +78,6 @@ interface PoseDetectorProps {
   // Optional toggles for HUD integration
   setShowSkeleton?: (show: boolean) => void;
   setShowTrajectory?: (show: boolean) => void;
-  setShowStrikeZone?: (show: boolean) => void;
 
   // App Mode and Config Changes
   appMode?: 'mechanics' | 'pitching';
@@ -86,6 +101,14 @@ interface PoseDetectorProps {
   // Controlled entirely from the off-canvas Settings menu - changing it here
   // restarts the webcam stream with the new lens.
   cameraFacingMode?: 'user' | 'environment';
+
+  // Reports live/paused status upward so the top bar can show it (replaces
+  // the on-canvas "ANALYSIS ACTIVE"/"FEED PAUSED" indicator).
+  onAnalysisStatusChange?: (isPaused: boolean) => void;
+
+  // Name of the player this session is being recorded for, shown as a
+  // top-center overlay on the video canvas.
+  currentPlayerName?: string;
 }
 
 export function PoseDetector({
@@ -97,6 +120,7 @@ export function PoseDetector({
   strikeZoneConfig,
   showStrikeZone,
   strikeZoneLocked = false,
+  showPitchSpeeds = true,
   pitches,
   onAddPitch,
   selectedPitchId,
@@ -106,7 +130,6 @@ export function PoseDetector({
   visibleMarkers,
   setShowSkeleton,
   setShowTrajectory,
-  setShowStrikeZone,
   appMode = 'mechanics',
   onConfigChange,
   measureMode = 'none',
@@ -117,12 +140,33 @@ export function PoseDetector({
   measurementUnit = 'ft',
   cameraZoom = 1,
   onCameraZoomChange,
-  cameraFacingMode = 'environment'
+  cameraFacingMode = 'environment',
+  onAnalysisStatusChange,
+  currentPlayerName
 }: PoseDetectorProps) {
   // Pitch stats for the on-canvas overlay (Pitches / Strike % / Max Velo)
   const pitchStrikes = pitches.filter(p => p.isStrike).length;
   const pitchStrikePercentage = pitches.length > 0 ? Math.round((pitchStrikes / pitches.length) * 100) : 0;
   const pitchMaxVelo = pitches.length > 0 ? Math.max(...pitches.map(p => p.velocity)) : 0;
+
+  // Same breakdown, per pitch type, for the rows listed under the totals -
+  // only types that have actually been thrown, most-thrown first.
+  const pitchStatsByType = Object.entries(
+    pitches.reduce((acc, p) => {
+      if (!acc[p.type]) acc[p.type] = { count: 0, strikes: 0, maxVelo: 0 };
+      acc[p.type].count += 1;
+      if (p.isStrike) acc[p.type].strikes += 1;
+      acc[p.type].maxVelo = Math.max(acc[p.type].maxVelo, p.velocity);
+      return acc;
+    }, {} as Record<string, { count: number; strikes: number; maxVelo: number }>)
+  )
+    .map(([type, s]) => ({
+      type: type as PitchType,
+      count: s.count,
+      strikePercentage: Math.round((s.strikes / s.count) * 100),
+      maxVelo: s.maxVelo,
+    }))
+    .sort((a, b) => b.count - a.count);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -158,6 +202,7 @@ export function PoseDetector({
   const strikeZoneConfigRef = useRef(strikeZoneConfig);
   const showStrikeZoneRef = useRef(showStrikeZone);
   const strikeZoneLockedRef = useRef(strikeZoneLocked);
+  const showPitchSpeedsRef = useRef(showPitchSpeeds);
   const pitchesRef = useRef(pitches);
   const selectedPitchIdRef = useRef(selectedPitchId);
   const currentPitchTypeRef = useRef(currentPitchType);
@@ -258,11 +303,13 @@ export function PoseDetector({
   const onCalibrationPixelDistanceRef = useRef(onCalibrationPixelDistance);
   const onMeasurementCompleteRef = useRef(onMeasurementComplete);
   const measurementUnitRef = useRef(measurementUnit);
+  const onAnalysisStatusChangeRef = useRef(onAnalysisStatusChange);
 
   useEffect(() => {
     strikeZoneConfigRef.current = strikeZoneConfig;
     showStrikeZoneRef.current = showStrikeZone;
     strikeZoneLockedRef.current = strikeZoneLocked;
+    showPitchSpeedsRef.current = showPitchSpeeds;
     pitchesRef.current = pitches;
     selectedPitchIdRef.current = selectedPitchId;
     currentPitchTypeRef.current = currentPitchType;
@@ -289,6 +336,7 @@ export function PoseDetector({
     onCalibrationPixelDistanceRef.current = onCalibrationPixelDistance;
     onMeasurementCompleteRef.current = onMeasurementComplete;
     measurementUnitRef.current = measurementUnit;
+    onAnalysisStatusChangeRef.current = onAnalysisStatusChange;
 
     // If we've got visual state changes while the video is paused or stopped,
     // request a single frame redraw to render the updates immediately.
@@ -1279,6 +1327,21 @@ export function PoseDetector({
     }
   }, [appMode]);
 
+  // The Telestrator drawing tool is mechanics-only (its toggle/panel are
+  // hidden in pitching mode) - close it out on mode switch so a still-active
+  // tool can't keep intercepting clicks meant for plotting pitches.
+  useEffect(() => {
+    if (appMode !== 'mechanics') {
+      setShowDrawTools(false);
+      setActiveDrawTool('none');
+    }
+  }, [appMode]);
+
+  // Report live/paused status upward for the top bar's status badge
+  useEffect(() => {
+    onAnalysisStatusChangeRef.current?.(isPaused);
+  }, [isPaused]);
+
   // Drawing Utilities
   const drawKeypoints = (keypoints: poseDetection.Keypoint[], ctx: CanvasRenderingContext2D) => {
     keypoints.forEach((keypoint, index) => {
@@ -1540,8 +1603,10 @@ export function PoseDetector({
     ctx.font = 'bold 10px "Inter", sans-serif';
     ctx.fillText('STRIKE ZONE', szX + 6, szY - 6);
 
-    // Draw handles if in pitching mode
-    if (appModeRef.current === 'pitching') {
+    // Draw resize handles only while the zone can actually be dragged/resized -
+    // once locked, canvas clicks always plot a pitch, so the handles would be
+    // misleading clutter.
+    if (appModeRef.current === 'pitching' && !strikeZoneLockedRef.current) {
       const corners = [
         { cx: szX, cy: szY },
         { cx: szX + szW, cy: szY },
@@ -1570,12 +1635,7 @@ export function PoseDetector({
       const isSelected = selectedPitchIdRef.current === pitch.id;
 
       // Pitch Color coding
-      let color = '#ef4444'; // Fastball red
-      if (pitch.type === 'Curveball') color = '#3b82f6';
-      else if (pitch.type === 'Slider') color = '#f59e0b';
-      else if (pitch.type === 'Changeup') color = '#10b981';
-      else if (pitch.type === 'Cutter') color = '#a855f7';
-      else if (pitch.type === 'Sinker') color = '#ec4899';
+      const color = getPitchTypeColor(pitch.type);
 
       // Draw highlighted pulsing circle if selected or last pitch
       const isLastPitch = pitch.number === pitchesRef.current.length;
@@ -1604,7 +1664,21 @@ export function PoseDetector({
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(pitch.number.toString(), pX, pY);
-      
+
+      // Draw the MPH label below the ball, if enabled
+      if (showPitchSpeedsRef.current) {
+        const label = `${pitch.velocity}`;
+        const labelY = pY + 15;
+        ctx.font = 'bold 9px "JetBrains Mono", monospace';
+        const labelWidth = ctx.measureText(label).width;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(pX - labelWidth / 2 - 3, labelY - 7, labelWidth + 6, 14);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(label, pX, labelY);
+      }
+
       // Reset text alignment
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
@@ -2277,16 +2351,10 @@ export function PoseDetector({
       {/* DYNAMIC TELEMETRY / STATUS OVERLAYS */}
       {isLoaded && !error && (
         <>
-          {/* Top Left Status Overlay */}
+          {/* Top Left Status Overlay - the ANALYSIS ACTIVE/FEED PAUSED indicator
+              itself now lives in the top nav bar (see onAnalysisStatusChange) */}
           <div className="absolute top-3 left-3 z-20 flex flex-col gap-1.5 pointer-events-none">
             <div className="px-2.5 py-1.5 bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg flex items-center gap-2 shadow-lg">
-              <span className="relative flex h-2 w-2">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isPaused ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${isPaused ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
-              </span>
-              <span className="text-[10px] font-bold font-mono text-white uppercase tracking-wider">
-                {isPaused ? 'FEED PAUSED' : 'ANALYSIS ACTIVE'}
-              </span>
               <span className="text-[9px] font-mono text-slate-400 px-1.5 py-0.5 bg-slate-800/80 rounded border border-slate-700/50 uppercase">
                 {feedSource === 'camera' ? 'WEBCAM' : feedSource === 'demo' ? 'DEMO FILE' : 'UPLOAD'}
               </span>
@@ -2301,6 +2369,13 @@ export function PoseDetector({
               </div>
             )}
           </div>
+
+          {/* Current player - top center, who this session is being recorded for */}
+          {currentPlayerName && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg pointer-events-none">
+              <span className="text-[10px] font-bold font-mono text-white uppercase tracking-wider">{currentPlayerName}</span>
+            </div>
+          )}
 
           {/* Calibration / Measurement hint banner - only shown while actively picking two points */}
           {measureMode !== 'none' && (
@@ -2321,6 +2396,10 @@ export function PoseDetector({
             </div>
           )}
 
+          {/* Telestrator - mechanics mode only; in pitching mode canvas clicks
+              are reserved for plotting pitches, so the drawing tool is hidden */}
+          {appMode === 'mechanics' && (
+          <>
           {/* Telestrator Toggle Button - the drawing tools stay off-canvas until called on demand */}
           <button
             onClick={() => {
@@ -2491,6 +2570,8 @@ export function PoseDetector({
               </button>
             </div>
           </div>
+          </>
+          )}
 
           {/* Top Right Quick Settings Toggles Overlay (Compact HUD Row) */}
           <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-1.5">
@@ -2524,21 +2605,6 @@ export function PoseDetector({
                 <span className="text-[9px] font-bold uppercase tracking-wider ml-1 hidden sm:inline">Trajectory</span>
               </button>
             )}
-
-            {appMode === 'pitching' && setShowStrikeZone && (
-              <button
-                onClick={() => setShowStrikeZone(!showStrikeZone)}
-                className={`p-2 rounded-lg border backdrop-blur-md transition-all shadow-lg flex items-center justify-center ${
-                  showStrikeZone
-                    ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
-                    : 'bg-black/70 border-slate-700/50 text-slate-400 hover:text-white'
-                }`}
-                title="Toggle Strike Zone overlay"
-              >
-                <Target className="w-4 h-4" />
-                <span className="text-[9px] font-bold uppercase tracking-wider ml-1 hidden sm:inline">Strike Zone</span>
-              </button>
-            )}
           </div>
 
           {/* Pitch stats overlay - Pitches / Strike % / Max Velo, on the canvas
@@ -2563,6 +2629,25 @@ export function PoseDetector({
                 <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Max Velo</p>
                 <p className="text-sm font-mono text-sky-400 font-bold leading-none mt-0.5">{pitchMaxVelo}</p>
               </div>
+            </div>
+          )}
+
+          {/* Same breakdown per pitch type, listed under the totals above */}
+          {appMode === 'pitching' && pitchStatsByType.length > 0 && (
+            <div className="bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg px-2 py-1.5 min-w-[168px]">
+              {pitchStatsByType.map(({ type, count, strikePercentage, maxVelo }) => (
+                <div key={type} className="flex items-center gap-2 text-[9px] font-mono py-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getPitchTypeColor(type) }} />
+                  <span className="text-slate-300 font-sans font-semibold uppercase tracking-wide flex-1 truncate">{type}</span>
+                  <span className="text-white font-bold w-4 text-right">{count}</span>
+                  <span className={`w-9 text-right font-bold ${
+                    strikePercentage >= 60 ? 'text-emerald-400' : strikePercentage >= 45 ? 'text-amber-400' : 'text-slate-400'
+                  }`}>
+                    {strikePercentage}%
+                  </span>
+                  <span className="text-sky-400 font-bold w-9 text-right">{maxVelo}mph</span>
+                </div>
+              ))}
             </div>
           )}
           </div>

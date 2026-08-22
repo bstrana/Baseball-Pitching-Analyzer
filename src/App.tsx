@@ -6,7 +6,7 @@ import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
 import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
-import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession } from './pocketbase';
+import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession, getPlayerSessionCount } from './pocketbase';
 
 const FEET_PER_METER = 3.28084;
 
@@ -24,8 +24,28 @@ export default function App() {
   const [newPlayerName, setNewPlayerName] = useState('');
   const [savingSession, setSavingSession] = useState(false);
   const [saveSessionMessage, setSaveSessionMessage] = useState<string | null>(null);
+  // Combined mechanics + pitch session count per player, shown in the roster
+  const [sessionCounts, setSessionCounts] = useState<Record<string, number>>({});
 
   const selectedPlayer = players.find(p => p.id === selectedPlayerId) || null;
+
+  const refreshSessionCount = (playerId: string) => {
+    getPlayerSessionCount(playerId)
+      .then((count) => setSessionCounts(prev => ({ ...prev, [playerId]: count })))
+      .catch(() => {});
+  };
+
+  const playerIdsKey = players.map(p => p.id).join(',');
+  useEffect(() => {
+    let active = true;
+    Promise.all(players.map(p => getPlayerSessionCount(p.id).then(count => [p.id, count] as const)))
+      .then((entries) => {
+        if (!active) return;
+        setSessionCounts(Object.fromEntries(entries));
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [playerIdsKey]);
 
   useEffect(() => {
     let active = true;
@@ -128,11 +148,52 @@ export default function App() {
   // bar on mobile, always expanded on lg+ where it has its own sidebar column.
   const [showPitchTracker, setShowPitchTracker] = useState(false);
 
+  // Manually resizable widths (lg+ only) for the left Session Pitch Log and
+  // right Pitch Accuracy Tracker sidebars, dragged via the handle on their
+  // inner edge.
+  const SIDEBAR_MIN_WIDTH = 240;
+  const SIDEBAR_MAX_WIDTH = 640;
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(320);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(320);
+
+  const startSidebarResize = (clientX: number, side: 'left' | 'right') => {
+    const startX = clientX;
+    const startWidth = side === 'left' ? leftSidebarWidth : rightSidebarWidth;
+    const setWidth = side === 'left' ? setLeftSidebarWidth : setRightSidebarWidth;
+
+    const move = (x: number) => {
+      const delta = side === 'left' ? x - startX : startX - x;
+      setWidth(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, startWidth + delta)));
+    };
+
+    const onMouseMove = (e: MouseEvent) => move(e.clientX);
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) move(e.touches[0].clientX);
+    };
+    const onTouchEnd = () => {
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
+    window.addEventListener('touchend', onTouchEnd);
+  };
+
   // Digital camera zoom (1x - 3x), applied as a CSS scale on the video canvas
   const [cameraZoom, setCameraZoom] = useState(1);
 
   // Which physical camera lens to use when on the live webcam feed
   const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
+
+  // Live/paused status, reported up from PoseDetector - shown in the nav bar
+  // instead of the old on-canvas "ANALYSIS ACTIVE"/"FEED PAUSED" badge.
+  const [analysisPaused, setAnalysisPaused] = useState(false);
 
   // Session menu (Session Setup / Export / Sign out) - far right of the top bar, all screen sizes
   const [showSessionMenu, setShowSessionMenu] = useState(false);
@@ -151,6 +212,8 @@ export default function App() {
   const [showStrikeZone, setShowStrikeZone] = useState(true);
   // Unlocked: canvas clicks drag/resize the zone. Locked: canvas clicks only plot pitches.
   const [strikeZoneLocked, setStrikeZoneLocked] = useState(false);
+  // Shows/hides the MPH label on plotted pitches (video canvas + Interactive PitchCast)
+  const [showPitchSpeeds, setShowPitchSpeeds] = useState(true);
   const [currentPitchType, setCurrentPitchType] = useState<PitchType>('Fastball');
   const [currentPitchSpeed, setCurrentPitchSpeed] = useState<number>(92);
   const [selectedPitchId, setSelectedPitchId] = useState<string | null>(null);
@@ -243,6 +306,7 @@ export default function App() {
         });
         setSaveSessionMessage('Pitch session saved.');
       }
+      refreshSessionCount(selectedPlayerId);
     } catch {
       setSaveSessionMessage('Could not save the session - is the PocketBase backend reachable?');
     } finally {
@@ -293,7 +357,13 @@ export default function App() {
             <Crosshair className="w-5 h-5 text-white" />
           </div>
           <div className="h-6 w-px bg-slate-700 mx-1 sm:mx-2 hidden sm:block"></div>
-          <span className="text-[10px] sm:text-xs font-mono px-2 py-1 bg-slate-800 rounded border border-slate-700 text-sky-400 hidden sm:inline-block">TENSORFLOW READY</span>
+          <span className="items-center gap-2 text-[10px] sm:text-xs font-mono px-2 py-1 bg-slate-800 rounded border border-slate-700 hidden sm:flex">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${analysisPaused ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${analysisPaused ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
+            </span>
+            <span className="text-white uppercase tracking-wider">{analysisPaused ? 'Feed Paused' : 'Analysis Active'}</span>
+          </span>
         </div>
         {/* Mode Selector - always in the top bar, between logo and session menu */}
         <div className="flex">{modeSelector}</div>
@@ -377,7 +447,10 @@ export default function App() {
             it's part of the collapsible right panel instead (no room for a
             third column) */}
         {appMode === 'pitching' && (
-          <aside className="hidden lg:flex lg:w-80 bg-slate-900 border-r border-slate-800 flex-col shrink-0 overflow-hidden h-full">
+          <aside
+            className="hidden lg:flex lg:w-[var(--left-sidebar-w)] bg-slate-900 border-r border-slate-800 flex-col shrink-0 overflow-hidden h-full relative"
+            style={{ '--left-sidebar-w': `${leftSidebarWidth}px` } as React.CSSProperties}
+          >
             <div className="flex-1 overflow-y-auto p-4 min-h-0">
               <PitchLog
                 pitches={pitches}
@@ -387,6 +460,13 @@ export default function App() {
                 setSelectedPitchId={setSelectedPitchId}
               />
             </div>
+            {/* Drag to resize - right edge of this sidebar */}
+            <div
+              onMouseDown={(e) => { e.preventDefault(); startSidebarResize(e.clientX, 'left'); }}
+              onTouchStart={(e) => { if (e.touches.length > 0) startSidebarResize(e.touches[0].clientX, 'left'); }}
+              className="hidden lg:block absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-sky-500/40 active:bg-sky-500/60 transition-colors"
+              title="Drag to resize"
+            />
           </aside>
         )}
 
@@ -407,6 +487,7 @@ export default function App() {
                  onConfigChange={setStrikeZoneConfig}
                  showStrikeZone={showStrikeZone}
                  strikeZoneLocked={strikeZoneLocked}
+                 showPitchSpeeds={showPitchSpeeds}
                  pitches={pitches}
                  onAddPitch={handleAddPitch}
                  selectedPitchId={selectedPitchId}
@@ -415,7 +496,6 @@ export default function App() {
                  currentPitchSpeed={currentPitchSpeed}
                  setShowSkeleton={setShowSkeleton}
                  setShowTrajectory={setShowTrajectory}
-                 setShowStrikeZone={setShowStrikeZone}
                  appMode={appMode}
                  visibleMarkers={visibleMarkers}
                  measureMode={measureMode}
@@ -430,6 +510,8 @@ export default function App() {
                  cameraZoom={cameraZoom}
                  onCameraZoomChange={setCameraZoom}
                  cameraFacingMode={cameraFacingMode}
+                 onAnalysisStatusChange={setAnalysisPaused}
+                 currentPlayerName={selectedPlayer?.name}
                />
             </div>
           </div>
@@ -516,9 +598,19 @@ export default function App() {
         {/* Right Sidebar: Pitch Tracking Accuracy Panel - collapsed behind a thin
             bar on mobile (matching the Live Metrics panel pattern), always expanded
             in its own column on lg+ */}
-        <aside className={`w-full lg:w-80 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex-col shrink-0 overflow-hidden h-auto lg:h-full ${
-          appMode === 'pitching' ? 'flex' : 'hidden'
-        }`}>
+        <aside
+          className={`w-full lg:w-[var(--right-sidebar-w)] bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex-col shrink-0 overflow-hidden h-auto lg:h-full relative ${
+            appMode === 'pitching' ? 'flex' : 'hidden'
+          }`}
+          style={{ '--right-sidebar-w': `${rightSidebarWidth}px` } as React.CSSProperties}
+        >
+          {/* Drag to resize - left edge of this sidebar */}
+          <div
+            onMouseDown={(e) => { e.preventDefault(); startSidebarResize(e.clientX, 'right'); }}
+            onTouchStart={(e) => { if (e.touches.length > 0) startSidebarResize(e.touches[0].clientX, 'right'); }}
+            className="hidden lg:block absolute top-0 left-0 h-full w-1.5 cursor-col-resize hover:bg-sky-500/40 active:bg-sky-500/60 transition-colors z-10"
+            title="Drag to resize"
+          />
           <button
             onClick={() => setShowPitchTracker(v => !v)}
             className="lg:hidden h-9 px-4 flex items-center justify-between text-slate-400 hover:text-slate-200 transition-colors shrink-0 cursor-pointer border-b border-slate-800"
@@ -548,6 +640,8 @@ export default function App() {
                 setShowStrikeZone={setShowStrikeZone}
                 strikeZoneLocked={strikeZoneLocked}
                 setStrikeZoneLocked={setStrikeZoneLocked}
+                showPitchSpeeds={showPitchSpeeds}
+                setShowPitchSpeeds={setShowPitchSpeeds}
                 currentPitchType={currentPitchType}
                 setCurrentPitchType={setCurrentPitchType}
                 currentPitchSpeed={currentPitchSpeed}
@@ -736,14 +830,19 @@ export default function App() {
                                   : 'bg-slate-800/60 border-slate-700/60 hover:bg-slate-800'
                               }`}
                             >
-                              <span className={`text-sm font-semibold ${selectedPlayerId === player.id ? 'text-sky-300' : 'text-slate-200'}`}>
-                                {player.name}
+                              <span className="flex items-center gap-2 min-w-0">
+                                <span className={`text-sm font-semibold truncate ${selectedPlayerId === player.id ? 'text-sky-300' : 'text-slate-200'}`}>
+                                  {player.name}
+                                </span>
+                                <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wider shrink-0">
+                                  {sessionCounts[player.id] ?? 0} session{(sessionCounts[player.id] ?? 0) === 1 ? '' : 's'}
+                                </span>
                               </span>
                               <span
                                 role="button"
                                 tabIndex={0}
                                 onClick={(e) => { e.stopPropagation(); handleDeletePlayer(player.id); }}
-                                className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-red-500/10 transition-colors"
+                                className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-red-500/10 transition-colors shrink-0"
                                 title="Delete player"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
