@@ -1,58 +1,30 @@
 import React from 'react';
-import { Pitch, PitchType, StrikeZoneConfig, classifyPitch } from '../types';
-import { Target, Trash2, Gauge, RotateCcw, Sliders, Layers, Eye, EyeOff, Lock, Unlock } from 'lucide-react';
+import { Pitch, PitchType, PitchCategory, StrikeZoneConfig, PitcherHandedness, PITCH_TYPE_INFO, PITCH_TYPES, classifyPitch } from '../types';
+import { Target, Trash2, Gauge, RotateCcw, Sliders, Layers, Eye, EyeOff, Lock, Unlock, Crosshair, Flag, RefreshCw } from 'lucide-react';
 
-const PITCH_TYPES: PitchType[] = [
-  'Fastball', 'Curveball', 'Slider', 'Changeup', 'Cutter', 'Sinker',
-  'Splitter', 'Knuckleball', 'Forkball', 'Screwball'
-];
-
-// Shared between the calibration map and the pitch log table below
+// Shared between the type selector, calibration map, and the pitch log
+// table below - see PITCH_TYPE_INFO in types.ts for the abbreviation/
+// category/color backing each pitch type.
 function getPitchColor(type: PitchType) {
-  switch (type) {
-    case 'Fastball': return 'bg-red-500 text-white border-red-400';
-    case 'Curveball': return 'bg-blue-500 text-white border-blue-400';
-    case 'Slider': return 'bg-amber-500 text-white border-amber-400';
-    case 'Changeup': return 'bg-emerald-500 text-white border-emerald-400';
-    case 'Cutter': return 'bg-purple-500 text-white border-purple-400';
-    case 'Sinker': return 'bg-pink-500 text-white border-pink-400';
-    case 'Splitter': return 'bg-cyan-500 text-white border-cyan-400';
-    case 'Knuckleball': return 'bg-lime-500 text-white border-lime-400';
-    case 'Forkball': return 'bg-orange-500 text-white border-orange-400';
-    case 'Screwball': return 'bg-indigo-500 text-white border-indigo-400';
-    default: return 'bg-slate-500 text-white border-slate-400';
-  }
+  return PITCH_TYPE_INFO[type].badgeClass;
 }
 
 function getPitchHexColor(type: PitchType) {
-  switch (type) {
-    case 'Fastball': return '#ef4444';
-    case 'Curveball': return '#3b82f6';
-    case 'Slider': return '#f59e0b';
-    case 'Changeup': return '#10b981';
-    case 'Cutter': return '#a855f7';
-    case 'Sinker': return '#ec4899';
-    case 'Splitter': return '#06b6d4';
-    case 'Knuckleball': return '#84cc16';
-    case 'Forkball': return '#f97316';
-    case 'Screwball': return '#6366f1';
-    default: return '#64748b';
-  }
+  return PITCH_TYPE_INFO[type].hexColor;
 }
 
 function getPitchAbbreviation(type: PitchType) {
-  switch (type) {
-    case 'Fastball': return 'FB';
-    case 'Curveball': return 'CB';
-    case 'Slider': return 'SL';
-    case 'Changeup': return 'CH';
-    case 'Cutter': return 'CT';
-    case 'Sinker': return 'SI';
-    case 'Splitter': return 'SP';
-    case 'Knuckleball': return 'KN';
-    case 'Forkball': return 'FO';
-    case 'Screwball': return 'SC';
-    default: return type;
+  return PITCH_TYPE_INFO[type].abbreviation;
+}
+
+const PITCH_CATEGORY_ORDER: PitchCategory[] = ['Fastball', 'Breaking Ball', 'Off-Speed'];
+
+function getMissResultStyle(result: Pitch['missResult']) {
+  switch (result) {
+    case 'on-target': return { label: 'On Target', className: 'text-emerald-400' };
+    case 'good-miss': return { label: 'Good Miss', className: 'text-amber-400' };
+    case 'bad-miss': return { label: 'Bad Miss', className: 'text-red-400' };
+    default: return null;
   }
 }
 
@@ -73,6 +45,10 @@ interface PitchTrackerProps {
   setCurrentPitchSpeed: (speed: number) => void;
   selectedPitchId: string | null;
   setSelectedPitchId: (id: string | null) => void;
+  targetMode: boolean;
+  setTargetMode: (enabled: boolean) => void;
+  pitcherHandedness: PitcherHandedness;
+  setPitcherHandedness: (handedness: PitcherHandedness) => void;
 }
 
 export function PitchTracker({
@@ -92,6 +68,10 @@ export function PitchTracker({
   setCurrentPitchSpeed,
   selectedPitchId,
   setSelectedPitchId,
+  targetMode,
+  setTargetMode,
+  pitcherHandedness,
+  setPitcherHandedness,
 }: PitchTrackerProps) {
 
   // Handle manual plotting on the mini strike zone chart
@@ -126,7 +106,7 @@ export function PitchTracker({
             <Target className="w-5 h-5 text-sky-400" />
             <h3 className="font-semibold text-sm text-white">PITCH CALIBRATION</h3>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center flex-wrap gap-1.5">
             <button
               onClick={() => setShowStrikeZone(!showStrikeZone)}
               className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${showStrikeZone ? 'bg-sky-950/40 border-sky-500/50 text-sky-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
@@ -152,26 +132,54 @@ export function PitchTracker({
               <Gauge className="w-3.5 h-3.5" />
               {showPitchSpeeds ? 'Speed On' : 'Speed Off'}
             </button>
+            <button
+              onClick={() => setTargetMode(!targetMode)}
+              title={targetMode
+                ? 'Target Mode on - tap the video canvas to plant a target, then tap again where the pitch lands to grade it.'
+                : 'Target Mode off - tap the video canvas to plant a target before each pitch and grade misses against it.'}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${targetMode ? 'bg-amber-950/40 border-amber-500/50 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+              {targetMode ? 'Target Mode On' : 'Target Mode Off'}
+            </button>
+            <button
+              onClick={() => setPitcherHandedness(pitcherHandedness === 'right' ? 'left' : 'right')}
+              title="Pitcher's throwing hand - only relabels Target Mode's glove side / arm side, doesn't change zone geometry."
+              className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border bg-slate-800 border-slate-700 text-slate-400 hover:text-white transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Throws {pitcherHandedness === 'right' ? 'R' : 'L'}
+            </button>
           </div>
         </div>
 
-        <div>
-          <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold block mb-2">Select Pitch Type</label>
-          <div className="grid grid-cols-3 gap-1.5">
-            {PITCH_TYPES.map((type) => (
-              <button
-                key={type}
-                onClick={() => setCurrentPitchType(type)}
-                className={`py-1.5 px-1 rounded text-xs font-semibold text-center border transition-all truncate ${
-                  currentPitchType === type
-                    ? 'bg-sky-600 border-sky-400 text-white font-bold shadow-md shadow-sky-600/20'
-                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
-                }`}
-              >
-                {type}
-              </button>
-            ))}
-          </div>
+        <div className="space-y-3">
+          <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold block">Select Pitch Type</label>
+          {PITCH_CATEGORY_ORDER.map((category) => {
+            const typesInCategory = PITCH_TYPES.filter((type) => PITCH_TYPE_INFO[type].category === category);
+            return (
+              <div key={category}>
+                <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest block mb-1">{category}</span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {typesInCategory.map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setCurrentPitchType(type)}
+                      title={type}
+                      className={`py-1.5 px-1 rounded text-center border transition-all ${
+                        currentPitchType === type
+                          ? 'bg-sky-600 border-sky-400 text-white shadow-md shadow-sky-600/20'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+                      }`}
+                    >
+                      <span className="block text-xs font-bold leading-tight">{PITCH_TYPE_INFO[type].abbreviation}</span>
+                      <span className="block text-[9px] font-semibold leading-tight truncate opacity-80">{type}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -251,9 +259,9 @@ export function PitchTracker({
         {/* Legend */}
         <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-3 text-[10px] text-slate-400 w-full bg-slate-950/40 p-2 rounded border border-slate-800/60">
           {PITCH_TYPES.map((type) => (
-            <div key={type} className="flex items-center gap-1.5 truncate">
+            <div key={type} className="flex items-center gap-1.5 truncate" title={type}>
               <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0" style={{ backgroundColor: getPitchHexColor(type) }}></span>
-              <span className="truncate">{type}</span>
+              <span className="truncate">{PITCH_TYPE_INFO[type].abbreviation} - {type}</span>
             </div>
           ))}
         </div>
@@ -364,6 +372,7 @@ interface PitchLogProps {
   onClearPitches: () => void;
   selectedPitchId: string | null;
   setSelectedPitchId: (id: string | null) => void;
+  onToggleBadShape: (id: string) => void;
 }
 
 export function PitchLog({
@@ -372,6 +381,7 @@ export function PitchLog({
   onClearPitches,
   selectedPitchId,
   setSelectedPitchId,
+  onToggleBadShape,
 }: PitchLogProps) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col h-full min-h-[220px]">
@@ -432,13 +442,28 @@ export function PitchLog({
                       </span>
                     </td>
                     <td className="py-2.5 px-2 font-bold text-white">{pitch.velocity}</td>
-                    <td className="py-2.5 px-2 truncate max-w-[90px] text-slate-300 font-sans" title={pitch.zone}>
+                    <td className="py-2.5 px-2 truncate max-w-[90px] text-slate-300 font-sans" title={pitch.targetZoneLabel ? `${pitch.zone} - Target: ${pitch.targetZoneLabel}` : pitch.zone}>
                       <span className={pitch.isStrike ? 'text-red-400' : 'text-emerald-400'}>
                         ●
                       </span>{' '}
                       {pitch.zone.split(' (')[0]}
+                      {pitch.missResult && (() => {
+                        const miss = getMissResultStyle(pitch.missResult);
+                        return miss ? (
+                          <span className={`block text-[9px] font-bold uppercase tracking-wider ${miss.className}`}>
+                            {miss.label}
+                          </span>
+                        ) : null;
+                      })()}
                     </td>
-                    <td className="py-2.5 px-3 text-right">
+                    <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => onToggleBadShape(pitch.id)}
+                        title={pitch.badShape ? 'Flagged as bad shape (flat curve, hanging slider, etc.) - click to clear' : 'Flag as bad shape (flat curve, hanging slider, etc.)'}
+                        className={`p-1 rounded hover:bg-orange-500/10 transition-colors inline-block ${pitch.badShape ? 'text-orange-400' : 'text-slate-600 hover:text-orange-400'}`}
+                      >
+                        <Flag className="w-3.5 h-3.5" fill={pitch.badShape ? 'currentColor' : 'none'} />
+                      </button>
                       <button
                         onClick={() => onRemovePitch(pitch.id)}
                         className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-red-500/10 transition-colors inline-block"
