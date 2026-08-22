@@ -1,3 +1,15 @@
+## 1.1.2
+
+* Further mobile/top-bar decluttering: the session menu now sits far right
+  of the top bar on every screen size, the Skeleton/Trajectory/Strike Zone
+  toggles moved back to their canvas overlay, and the Mechanics/Pitch
+  Tracker toggle now lives inline in the top bar on mobile too (compact
+  labels below the `sm` breakpoint).
+* Add a real distance calibration and measurement tool under Settings:
+  draw over a known real-world distance to establish a pixel scale, then
+  measure any other on-screen distance, in either US (feet) or metric
+  (meters) units.
+
 ## 1.1.1
 
 * UI decluttering: dropped the header title text, moved Session Setup /
