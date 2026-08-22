@@ -1,3 +1,15 @@
+## 1.1.5
+
+* Fix a bug where tapping the strike zone on a touchscreen logged two
+  pitches instead of one - the browser's synthesized mouse click
+  following a touch tap was firing the pitch-logging logic a second
+  time.
+* Hide the red "drag zone / corners to calibrate" hint banner once the
+  strike zone is locked, since there's nothing left to calibrate.
+* Move Camera Zoom from the Settings modal onto the on-canvas camera
+  control bar as a popover, so the live feed stays visible while
+  adjusting it instead of zooming blind.
+
 ## 1.1.4
 
 * The on-canvas camera control bar (Record/Replays/Source/Snapshot/Speed)
