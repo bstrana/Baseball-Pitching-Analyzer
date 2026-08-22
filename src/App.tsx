@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PoseDetector, PoseMetrics } from './components/PoseDetector';
-import { PitchTracker } from './components/PitchTracker';
+import { PitchTracker, PitchLog } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
 import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, ZoomIn, RefreshCw } from 'lucide-react';
@@ -78,6 +78,8 @@ export default function App() {
     height: 0.38
   });
   const [showStrikeZone, setShowStrikeZone] = useState(true);
+  // Unlocked: canvas clicks drag/resize the zone. Locked: canvas clicks only plot pitches.
+  const [strikeZoneLocked, setStrikeZoneLocked] = useState(false);
   const [currentPitchType, setCurrentPitchType] = useState<PitchType>('Fastball');
   const [currentPitchSpeed, setCurrentPitchSpeed] = useState<number>(92);
   const [selectedPitchId, setSelectedPitchId] = useState<string | null>(null);
@@ -254,7 +256,24 @@ export default function App() {
       </nav>
 
       <div className="flex flex-1 overflow-hidden flex-col lg:flex-row relative">
-        
+
+        {/* Left Sidebar: Session Pitch Log - desktop only; on smaller screens
+            it's part of the collapsible right panel instead (no room for a
+            third column) */}
+        {appMode === 'pitching' && (
+          <aside className="hidden lg:flex lg:w-80 bg-slate-900 border-r border-slate-800 flex-col shrink-0 overflow-hidden h-full">
+            <div className="flex-1 overflow-y-auto p-4 min-h-0">
+              <PitchLog
+                pitches={pitches}
+                onRemovePitch={handleRemovePitch}
+                onClearPitches={handleClearPitches}
+                selectedPitchId={selectedPitchId}
+                setSelectedPitchId={setSelectedPitchId}
+              />
+            </div>
+          </aside>
+        )}
+
         {/* Main Content: Video Feed & Metrics */}
         <main className="flex-1 flex flex-col bg-slate-950 overflow-hidden h-full">
           
@@ -271,6 +290,7 @@ export default function App() {
                  strikeZoneConfig={strikeZoneConfig}
                  onConfigChange={setStrikeZoneConfig}
                  showStrikeZone={showStrikeZone}
+                 strikeZoneLocked={strikeZoneLocked}
                  pitches={pitches}
                  onAddPitch={handleAddPitch}
                  selectedPitchId={selectedPitchId}
@@ -405,12 +425,12 @@ export default function App() {
               <PitchTracker
                 pitches={pitches}
                 onAddPitch={handleAddPitch}
-                onRemovePitch={handleRemovePitch}
-                onClearPitches={handleClearPitches}
                 config={strikeZoneConfig}
                 onConfigChange={setStrikeZoneConfig}
                 showStrikeZone={showStrikeZone}
                 setShowStrikeZone={setShowStrikeZone}
+                strikeZoneLocked={strikeZoneLocked}
+                setStrikeZoneLocked={setStrikeZoneLocked}
                 currentPitchType={currentPitchType}
                 setCurrentPitchType={setCurrentPitchType}
                 currentPitchSpeed={currentPitchSpeed}
@@ -418,6 +438,18 @@ export default function App() {
                 selectedPitchId={selectedPitchId}
                 setSelectedPitchId={setSelectedPitchId}
               />
+
+              {/* Pitch log lives in the left column on lg+; keep it reachable
+                  here below lg where there's no room for a third column */}
+              <div className="lg:hidden mt-5 h-[360px]">
+                <PitchLog
+                  pitches={pitches}
+                  onRemovePitch={handleRemovePitch}
+                  onClearPitches={handleClearPitches}
+                  selectedPitchId={selectedPitchId}
+                  setSelectedPitchId={setSelectedPitchId}
+                />
+              </div>
             </div>
           </div>
         </aside>
