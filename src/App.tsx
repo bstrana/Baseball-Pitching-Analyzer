@@ -3,8 +3,9 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { keycloak, keycloakEnabled } from './auth';
 
 export default function App() {
   const [showSetupModal, setShowSetupModal] = useState(false);
@@ -41,6 +42,9 @@ export default function App() {
 
   // Live Metrics / Kinematic Sequence panel - collapsed by default, opened from the thin footer bar
   const [showMetricsPanel, setShowMetricsPanel] = useState(false);
+
+  // Session menu (Session Setup / Export / Sign out) - far right of the top bar, all screen sizes
+  const [showSessionMenu, setShowSessionMenu] = useState(false);
 
   // Active Mode: 'mechanics' or 'pitching'
   const [appMode, setAppMode] = useState<'mechanics' | 'pitching'>('mechanics');
@@ -172,18 +176,73 @@ export default function App() {
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
             <span className="text-xs text-slate-400 uppercase tracking-widest font-sans">Live Feed • 60 FPS</span>
           </div>
+
+          <div className="relative">
+            <button
+              onClick={() => setShowSessionMenu(v => !v)}
+              title="Session menu"
+              className={`p-1.5 sm:p-2 rounded-md border transition-all cursor-pointer ${
+                showSessionMenu
+                  ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                  : 'bg-slate-850 hover:bg-slate-800 border-slate-700 text-slate-200'
+              }`}
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+
+            {showSessionMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-40 bg-black/5"
+                  onClick={() => setShowSessionMenu(false)}
+                />
+                <div className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl py-1 z-50">
+                  <button
+                    onClick={() => { setShowSetupModal(true); setShowSessionMenu(false); }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
+                  >
+                    <Settings className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span className="font-semibold">Session Setup</span>
+                  </button>
+                  <button
+                    onClick={() => { handleExportSession(); setShowSessionMenu(false); }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
+                  >
+                    <Download className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span className="font-semibold">Export Session (JSON)</span>
+                  </button>
+                  <button
+                    onClick={() => { handleExportCSV(); setShowSessionMenu(false); }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
+                  >
+                    <Download className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="font-semibold">Export Pitch Log (CSV)</span>
+                  </button>
+                  {keycloakEnabled && (
+                    <button
+                      onClick={() => { setShowSessionMenu(false); keycloak!.logout(); }}
+                      className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5 border-t border-slate-800/60 mt-1 pt-2.5"
+                    >
+                      <LogOut className="w-4 h-4 text-slate-400 shrink-0" />
+                      <span className="font-semibold">Sign Out</span>
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </nav>
 
       {/* Mode Selector - small screens only, doesn't fit in the top bar */}
-      <div className="sm:hidden bg-slate-900 border-b border-slate-800 px-4 py-2 flex justify-center shrink-0 z-20">
+      <div className="sm:hidden bg-slate-900 border-b border-slate-800 px-4 py-2 flex justify-center shrink-0">
         {modeSelector}
       </div>
 
       <div className="flex flex-1 overflow-hidden flex-col lg:flex-row relative">
         
         {/* Main Content: Video Feed & Metrics */}
-        <main className={`flex-1 flex flex-col bg-slate-950 overflow-hidden ${appMode === 'mechanics' || activeMobileTab === 'feed' ? 'flex h-full' : 'hidden lg:flex'}`}>
+        <main className={`flex-1 flex flex-col bg-slate-950 overflow-hidden pb-20 lg:pb-0 ${appMode === 'mechanics' || activeMobileTab === 'feed' ? 'flex h-full' : 'hidden lg:flex'}`}>
           
           {/* Video Feed Area */}
           <div className="flex-1 relative bg-black flex items-center justify-center p-0 lg:p-4 min-h-0">
@@ -210,16 +269,13 @@ export default function App() {
                  setCameraView={setCameraView}
                  appMode={appMode}
                  visibleMarkers={visibleMarkers}
-                 onOpenSessionSetup={() => setShowSetupModal(true)}
-                 onExportSession={handleExportSession}
-                 onExportCSV={handleExportCSV}
                />
             </div>
           </div>
 
           {/* Bottom Analysis and Metrics Section - collapsed by default, opened from the thin bar below */}
           {appMode === 'mechanics' && (
-            <div className="hidden lg:flex flex-col bg-slate-900 border-t border-slate-800 shrink-0">
+            <div className="flex flex-col bg-slate-900 border-t border-slate-800 shrink-0">
               <button
                 onClick={() => setShowMetricsPanel(v => !v)}
                 className="h-9 px-4 flex items-center justify-between text-slate-400 hover:text-slate-200 transition-colors shrink-0 cursor-pointer"

@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, Settings, Download, LogOut } from 'lucide-react';
-import { keycloak, keycloakEnabled } from '../auth';
+import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X } from 'lucide-react';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, classifyPitch } from '../types';
 
 // Required to initialize the WebGL backend
@@ -66,12 +65,6 @@ interface PoseDetectorProps {
   // App Mode and Config Changes
   appMode?: 'mechanics' | 'pitching';
   onConfigChange?: (config: StrikeZoneConfig) => void;
-
-  // Session menu actions (session setup modal, export, sign out) - surfaced
-  // from a canvas-overlay menu instead of the top nav bar
-  onOpenSessionSetup?: () => void;
-  onExportSession?: () => void;
-  onExportCSV?: () => void;
 }
 
 export function PoseDetector({
@@ -94,12 +87,8 @@ export function PoseDetector({
   setShowStrikeZone,
   setCameraView,
   appMode = 'mechanics',
-  onConfigChange,
-  onOpenSessionSetup,
-  onExportSession,
-  onExportCSV
+  onConfigChange
 }: PoseDetectorProps) {
-  const [showTopMenu, setShowTopMenu] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2244,69 +2233,6 @@ export function PoseDetector({
                 <Target className="w-4 h-4" />
                 <span className="text-[9px] font-bold uppercase tracking-wider ml-1 hidden sm:inline">Strike Zone</span>
               </button>
-            )}
-
-            {(onOpenSessionSetup || onExportSession || onExportCSV) && (
-              <div className="relative">
-                <button
-                  onClick={() => setShowTopMenu(v => !v)}
-                  className={`p-2 rounded-lg border backdrop-blur-md transition-all shadow-lg flex items-center justify-center ${
-                    showTopMenu
-                      ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
-                      : 'bg-black/70 border-slate-700/50 text-slate-400 hover:text-white'
-                  }`}
-                  title="Session menu"
-                >
-                  <MoreVertical className="w-4 h-4" />
-                </button>
-
-                {showTopMenu && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-40 bg-black/5"
-                      onClick={() => setShowTopMenu(false)}
-                    />
-                    <div className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl py-1 z-50">
-                      {onOpenSessionSetup && (
-                        <button
-                          onClick={() => { onOpenSessionSetup(); setShowTopMenu(false); }}
-                          className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
-                        >
-                          <Settings className="w-4 h-4 text-sky-400 shrink-0" />
-                          <span className="font-semibold">Session Setup</span>
-                        </button>
-                      )}
-                      {onExportSession && (
-                        <button
-                          onClick={() => { onExportSession(); setShowTopMenu(false); }}
-                          className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
-                        >
-                          <Download className="w-4 h-4 text-sky-400 shrink-0" />
-                          <span className="font-semibold">Export Session (JSON)</span>
-                        </button>
-                      )}
-                      {onExportCSV && (
-                        <button
-                          onClick={() => { onExportCSV(); setShowTopMenu(false); }}
-                          className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
-                        >
-                          <Download className="w-4 h-4 text-emerald-400 shrink-0" />
-                          <span className="font-semibold">Export Pitch Log (CSV)</span>
-                        </button>
-                      )}
-                      {keycloakEnabled && (
-                        <button
-                          onClick={() => { setShowTopMenu(false); keycloak!.logout(); }}
-                          className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5 border-t border-slate-800/60 mt-1 pt-2.5"
-                        >
-                          <LogOut className="w-4 h-4 text-slate-400 shrink-0" />
-                          <span className="font-semibold">Sign Out</span>
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
             )}
           </div>
 
