@@ -1283,6 +1283,16 @@ export function PoseDetector({
     }
   }, [appMode]);
 
+  // The Telestrator drawing tool is mechanics-only (its toggle/panel are
+  // hidden in pitching mode) - close it out on mode switch so a still-active
+  // tool can't keep intercepting clicks meant for plotting pitches.
+  useEffect(() => {
+    if (appMode !== 'mechanics') {
+      setShowDrawTools(false);
+      setActiveDrawTool('none');
+    }
+  }, [appMode]);
+
   // Drawing Utilities
   const drawKeypoints = (keypoints: poseDetection.Keypoint[], ctx: CanvasRenderingContext2D) => {
     keypoints.forEach((keypoint, index) => {
@@ -1544,8 +1554,10 @@ export function PoseDetector({
     ctx.font = 'bold 10px "Inter", sans-serif';
     ctx.fillText('STRIKE ZONE', szX + 6, szY - 6);
 
-    // Draw handles if in pitching mode
-    if (appModeRef.current === 'pitching') {
+    // Draw resize handles only while the zone can actually be dragged/resized -
+    // once locked, canvas clicks always plot a pitch, so the handles would be
+    // misleading clutter.
+    if (appModeRef.current === 'pitching' && !strikeZoneLockedRef.current) {
       const corners = [
         { cx: szX, cy: szY },
         { cx: szX + szW, cy: szY },
@@ -2343,6 +2355,10 @@ export function PoseDetector({
             </div>
           )}
 
+          {/* Telestrator - mechanics mode only; in pitching mode canvas clicks
+              are reserved for plotting pitches, so the drawing tool is hidden */}
+          {appMode === 'mechanics' && (
+          <>
           {/* Telestrator Toggle Button - the drawing tools stay off-canvas until called on demand */}
           <button
             onClick={() => {
@@ -2513,6 +2529,8 @@ export function PoseDetector({
               </button>
             </div>
           </div>
+          </>
+          )}
 
           {/* Top Right Quick Settings Toggles Overlay (Compact HUD Row) */}
           <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-1.5">

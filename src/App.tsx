@@ -128,6 +128,43 @@ export default function App() {
   // bar on mobile, always expanded on lg+ where it has its own sidebar column.
   const [showPitchTracker, setShowPitchTracker] = useState(false);
 
+  // Manually resizable widths (lg+ only) for the left Session Pitch Log and
+  // right Pitch Accuracy Tracker sidebars, dragged via the handle on their
+  // inner edge.
+  const SIDEBAR_MIN_WIDTH = 240;
+  const SIDEBAR_MAX_WIDTH = 640;
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(320);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(320);
+
+  const startSidebarResize = (clientX: number, side: 'left' | 'right') => {
+    const startX = clientX;
+    const startWidth = side === 'left' ? leftSidebarWidth : rightSidebarWidth;
+    const setWidth = side === 'left' ? setLeftSidebarWidth : setRightSidebarWidth;
+
+    const move = (x: number) => {
+      const delta = side === 'left' ? x - startX : startX - x;
+      setWidth(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, startWidth + delta)));
+    };
+
+    const onMouseMove = (e: MouseEvent) => move(e.clientX);
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) move(e.touches[0].clientX);
+    };
+    const onTouchEnd = () => {
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
+    window.addEventListener('touchend', onTouchEnd);
+  };
+
   // Digital camera zoom (1x - 3x), applied as a CSS scale on the video canvas
   const [cameraZoom, setCameraZoom] = useState(1);
 
@@ -379,7 +416,10 @@ export default function App() {
             it's part of the collapsible right panel instead (no room for a
             third column) */}
         {appMode === 'pitching' && (
-          <aside className="hidden lg:flex lg:w-80 bg-slate-900 border-r border-slate-800 flex-col shrink-0 overflow-hidden h-full">
+          <aside
+            className="hidden lg:flex lg:w-[var(--left-sidebar-w)] bg-slate-900 border-r border-slate-800 flex-col shrink-0 overflow-hidden h-full relative"
+            style={{ '--left-sidebar-w': `${leftSidebarWidth}px` } as React.CSSProperties}
+          >
             <div className="flex-1 overflow-y-auto p-4 min-h-0">
               <PitchLog
                 pitches={pitches}
@@ -389,6 +429,13 @@ export default function App() {
                 setSelectedPitchId={setSelectedPitchId}
               />
             </div>
+            {/* Drag to resize - right edge of this sidebar */}
+            <div
+              onMouseDown={(e) => { e.preventDefault(); startSidebarResize(e.clientX, 'left'); }}
+              onTouchStart={(e) => { if (e.touches.length > 0) startSidebarResize(e.touches[0].clientX, 'left'); }}
+              className="hidden lg:block absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-sky-500/40 active:bg-sky-500/60 transition-colors"
+              title="Drag to resize"
+            />
           </aside>
         )}
 
@@ -519,9 +566,19 @@ export default function App() {
         {/* Right Sidebar: Pitch Tracking Accuracy Panel - collapsed behind a thin
             bar on mobile (matching the Live Metrics panel pattern), always expanded
             in its own column on lg+ */}
-        <aside className={`w-full lg:w-80 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex-col shrink-0 overflow-hidden h-auto lg:h-full ${
-          appMode === 'pitching' ? 'flex' : 'hidden'
-        }`}>
+        <aside
+          className={`w-full lg:w-[var(--right-sidebar-w)] bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex-col shrink-0 overflow-hidden h-auto lg:h-full relative ${
+            appMode === 'pitching' ? 'flex' : 'hidden'
+          }`}
+          style={{ '--right-sidebar-w': `${rightSidebarWidth}px` } as React.CSSProperties}
+        >
+          {/* Drag to resize - left edge of this sidebar */}
+          <div
+            onMouseDown={(e) => { e.preventDefault(); startSidebarResize(e.clientX, 'right'); }}
+            onTouchStart={(e) => { if (e.touches.length > 0) startSidebarResize(e.touches[0].clientX, 'right'); }}
+            className="hidden lg:block absolute top-0 left-0 h-full w-1.5 cursor-col-resize hover:bg-sky-500/40 active:bg-sky-500/60 transition-colors z-10"
+            title="Drag to resize"
+          />
           <button
             onClick={() => setShowPitchTracker(v => !v)}
             className="lg:hidden h-9 px-4 flex items-center justify-between text-slate-400 hover:text-slate-200 transition-colors shrink-0 cursor-pointer border-b border-slate-800"
