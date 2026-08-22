@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal } from 'lucide-react';
+import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn } from 'lucide-react';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, classifyPitch } from '../types';
 
 // Required to initialize the WebGL backend
@@ -77,7 +77,10 @@ interface PoseDetectorProps {
   measurementUnit?: 'ft' | 'm';
 
   // Digital camera zoom (1x - 3x) applied as a CSS scale on the video canvas.
+  // Adjusted from the on-canvas HUD bar (not a modal) so the live feed stays
+  // visible while dialing it in, rather than zooming "blind".
   cameraZoom?: number;
+  onCameraZoomChange?: (zoom: number) => void;
 
   // Which physical camera lens to use ('user' = front/selfie, 'environment' = rear).
   // Controlled entirely from the off-canvas Settings menu - changing it here
@@ -113,6 +116,7 @@ export function PoseDetector({
   onMeasurementComplete,
   measurementUnit = 'ft',
   cameraZoom = 1,
+  onCameraZoomChange,
   cameraFacingMode = 'environment'
 }: PoseDetectorProps) {
   // Pitch stats for the on-canvas overlay (Pitches / Strike % / Max Velo)
@@ -126,6 +130,7 @@ export function PoseDetector({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [showSourceMenu, setShowSourceMenu] = useState(false);
+  const [showZoomMenu, setShowZoomMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
@@ -2762,6 +2767,60 @@ export function PoseDetector({
                         <Upload className="w-4 h-4 shrink-0" />
                         <span className="font-semibold">Upload Video</span>
                       </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Camera Zoom - a popover instead of the Settings modal so the
+                  live feed stays visible while dialing it in */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowZoomMenu(v => !v)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider text-white shadow-lg ${
+                    showZoomMenu
+                      ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                      : 'bg-black/50 border-slate-800 hover:bg-black/75'
+                  }`}
+                  title="Camera zoom"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                  <span className="font-mono">{cameraZoom.toFixed(1)}x</span>
+                </button>
+
+                {showZoomMenu && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40 bg-black/5"
+                      onClick={() => setShowZoomMenu(false)}
+                    />
+                    <div className="absolute bottom-full mb-2 right-0 w-56 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-3.5 z-50">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Camera Zoom</span>
+                        <span className="text-xs font-mono text-sky-400 font-bold">{cameraZoom.toFixed(1)}x</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1"
+                        max="3"
+                        step="0.1"
+                        value={cameraZoom}
+                        onChange={(e) => onCameraZoomChange?.(parseFloat(e.target.value))}
+                        className="w-full accent-sky-500 cursor-pointer"
+                      />
+                      <div className="flex items-center justify-between mt-1.5 text-[9px] text-slate-500 font-mono uppercase">
+                        <span>1x</span>
+                        <span>2x</span>
+                        <span>3x</span>
+                      </div>
+                      {cameraZoom !== 1 && (
+                        <button
+                          onClick={() => onCameraZoomChange?.(1)}
+                          className="w-full mt-2.5 px-3 py-1.5 text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-wider transition-colors cursor-pointer"
+                        >
+                          Reset zoom
+                        </button>
+                      )}
                     </div>
                   </>
                 )}

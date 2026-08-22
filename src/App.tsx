@@ -3,7 +3,7 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker, PitchLog } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, ZoomIn, RefreshCw } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
 
@@ -312,6 +312,7 @@ export default function App() {
                  onMeasurementComplete={setLastMeasuredFeet}
                  measurementUnit={calibrationUnit}
                  cameraZoom={cameraZoom}
+                 onCameraZoomChange={setCameraZoom}
                  cameraFacingMode={cameraFacingMode}
                />
             </div>
@@ -642,40 +643,6 @@ export default function App() {
                         </span>
                         <RefreshCw className="w-4 h-4 text-sky-400" />
                       </button>
-                    </div>
-
-                    <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
-                      <div className="flex items-center justify-between mb-1">
-                        <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Camera Zoom</h4>
-                        <span className="text-[11px] font-mono text-sky-400 font-bold">{cameraZoom.toFixed(1)}x</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 mb-4">Digitally zoom the video canvas to frame the pitcher tighter - the skeleton and every overlay zoom with it.</p>
-
-                      <div className="flex items-center gap-3">
-                        <ZoomIn className="w-4 h-4 text-slate-500 shrink-0" />
-                        <input
-                          type="range"
-                          min="1"
-                          max="3"
-                          step="0.1"
-                          value={cameraZoom}
-                          onChange={(e) => setCameraZoom(parseFloat(e.target.value))}
-                          className="w-full accent-sky-500 cursor-pointer"
-                        />
-                      </div>
-                      <div className="flex items-center justify-between mt-2 text-[9px] text-slate-500 font-mono uppercase">
-                        <span>1x</span>
-                        <span>2x</span>
-                        <span>3x</span>
-                      </div>
-                      {cameraZoom !== 1 && (
-                        <button
-                          onClick={() => setCameraZoom(1)}
-                          className="w-full mt-3 px-3 py-1.5 text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-wider transition-colors cursor-pointer"
-                        >
-                          Reset zoom
-                        </button>
-                      )}
                     </div>
 
                     <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
