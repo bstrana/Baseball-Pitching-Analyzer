@@ -3,18 +3,26 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
 
 export default function App() {
   const [showSetupModal, setShowSetupModal] = useState(false);
-  const [activeModalTab, setActiveModalTab] = useState<'profile' | 'camera' | 'overlays' | 'guide'>('profile');
+  const [activeModalTab, setActiveModalTab] = useState<'profile' | 'camera' | 'overlays' | 'calibration' | 'guide'>('profile');
   const [pitcherProfile, setPitcherProfile] = useState({
     height: 74,
     weight: 210,
     wingspan: 75
   });
+
+  // Distance calibration & measurement: click-drag two points across a known
+  // real-world distance to establish a pixels-per-foot scale, then use that
+  // scale to measure any other on-screen distance.
+  const [referenceDistanceFeet, setReferenceDistanceFeet] = useState(60.5); // mound-to-plate default
+  const [pixelsPerFoot, setPixelsPerFoot] = useState<number | null>(null);
+  const [measureMode, setMeasureMode] = useState<'none' | 'calibrate' | 'measure'>('none');
+  const [lastMeasuredFeet, setLastMeasuredFeet] = useState<number | null>(null);
 
   const [metrics, setMetrics] = useState<PoseMetrics>({ 
     rightArmAngle: 0, 
@@ -269,6 +277,13 @@ export default function App() {
                  setCameraView={setCameraView}
                  appMode={appMode}
                  visibleMarkers={visibleMarkers}
+                 measureMode={measureMode}
+                 onMeasureModeChange={setMeasureMode}
+                 pixelsPerFoot={pixelsPerFoot}
+                 onCalibrationPixelDistance={(pixelDistance) => {
+                   setPixelsPerFoot(pixelDistance / referenceDistanceFeet);
+                 }}
+                 onMeasurementComplete={setLastMeasuredFeet}
                />
             </div>
           </div>
@@ -496,6 +511,17 @@ export default function App() {
                   <span>Overlays</span>
                 </button>
                 <button
+                  onClick={() => setActiveModalTab('calibration')}
+                  className={`flex-1 py-2 text-xs font-semibold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${
+                    activeModalTab === 'calibration'
+                      ? 'bg-slate-800 text-sky-400 shadow font-bold'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/40'
+                  }`}
+                >
+                  <Ruler className="w-3.5 h-3.5" />
+                  <span>Calibration</span>
+                </button>
+                <button
                   onClick={() => setActiveModalTab('guide')}
                   className={`flex-1 py-2 text-xs font-semibold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${
                     activeModalTab === 'guide'
@@ -670,6 +696,87 @@ export default function App() {
                         </button>
                       </div>
                       <p className="text-[11px] text-slate-400">Generate a high-frequency velocity tail displaying hand acceleration vectors throughout the throw cycle.</p>
+                    </div>
+                  </div>
+                )}
+
+                {activeModalTab === 'calibration' && (
+                  <div className="space-y-4">
+                    <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                      <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-1">Distance Calibration</h4>
+                      <p className="text-[11px] text-slate-400 mb-4">
+                        Set a known real-world distance (e.g. the 60'6" mound-to-plate distance, or a marked
+                        stride line), then draw over that same distance on the video to establish a
+                        pixels-per-foot scale for measuring anything else on screen.
+                      </p>
+
+                      <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60 mb-3">
+                        <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">Reference Distance (feet)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={referenceDistanceFeet}
+                          onChange={(e) => setReferenceDistanceFeet(parseFloat(e.target.value) || 0)}
+                          className="w-full bg-transparent text-white font-mono font-bold text-sm focus:outline-none"
+                        />
+                      </div>
+
+                      <div className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border mb-3 ${
+                        pixelsPerFoot
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                          : 'bg-slate-800/60 border-slate-700/60 text-slate-400'
+                      }`}>
+                        <Ruler className="w-4 h-4 shrink-0" />
+                        <span className="text-[11px] font-mono">
+                          {pixelsPerFoot ? `Calibrated - ${pixelsPerFoot.toFixed(1)} px/ft` : 'Not calibrated yet'}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setMeasureMode('calibrate');
+                          setShowSetupModal(false);
+                        }}
+                        disabled={referenceDistanceFeet <= 0}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg transition-all cursor-pointer"
+                      >
+                        <Ruler className="w-3.5 h-3.5" />
+                        <span>{pixelsPerFoot ? 'Re-calibrate' : 'Start Calibration'}</span>
+                      </button>
+                      {pixelsPerFoot && (
+                        <button
+                          onClick={() => { setPixelsPerFoot(null); setLastMeasuredFeet(null); }}
+                          className="w-full mt-2 px-3 py-1.5 text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-wider transition-colors cursor-pointer"
+                        >
+                          Clear calibration
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                      <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-1">Measure a Distance</h4>
+                      <p className="text-[11px] text-slate-400 mb-4">
+                        Once calibrated, draw between any two points on the video to read off the real-world
+                        distance in feet - stride length, release point height, whatever you need.
+                      </p>
+
+                      <button
+                        onClick={() => {
+                          setMeasureMode('measure');
+                          setShowSetupModal(false);
+                        }}
+                        disabled={!pixelsPerFoot}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg transition-all cursor-pointer"
+                      >
+                        <Ruler className="w-3.5 h-3.5" />
+                        <span>Measure Distance</span>
+                      </button>
+
+                      {lastMeasuredFeet !== null && (
+                        <p className="text-[11px] text-slate-400 mt-3 font-mono">
+                          Last measurement: <span className="text-sky-400 font-bold">{lastMeasuredFeet.toFixed(2)} ft</span>
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}

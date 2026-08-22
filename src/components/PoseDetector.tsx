@@ -65,6 +65,13 @@ interface PoseDetectorProps {
   // App Mode and Config Changes
   appMode?: 'mechanics' | 'pitching';
   onConfigChange?: (config: StrikeZoneConfig) => void;
+
+  // Distance calibration & measurement
+  measureMode?: 'none' | 'calibrate' | 'measure';
+  onMeasureModeChange?: (mode: 'none' | 'calibrate' | 'measure') => void;
+  pixelsPerFoot?: number | null;
+  onCalibrationPixelDistance?: (pixelDistance: number) => void;
+  onMeasurementComplete?: (feet: number) => void;
 }
 
 export function PoseDetector({
@@ -87,7 +94,12 @@ export function PoseDetector({
   setShowStrikeZone,
   setCameraView,
   appMode = 'mechanics',
-  onConfigChange
+  onConfigChange,
+  measureMode = 'none',
+  onMeasureModeChange,
+  pixelsPerFoot,
+  onCalibrationPixelDistance,
+  onMeasurementComplete
 }: PoseDetectorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -206,6 +218,21 @@ export function PoseDetector({
   const activeDrawToolRef = useRef(activeDrawTool);
   const activeDrawColorRef = useRef(activeDrawColor);
 
+  // Distance calibration / measurement - click-drag two points, same interaction
+  // as the telestrator 'line' tool. In 'calibrate' mode the pixel distance is
+  // reported up so a known real-world reference distance can convert it into a
+  // pixels-per-foot scale; in 'measure' mode that scale converts the drawn
+  // distance into feet directly on the canvas.
+  const [measurePoints, setMeasurePoints] = useState<{ x: number; y: number }[]>([]);
+  const [measureResult, setMeasureResult] = useState<{ points: { x: number; y: number }[]; pixelDistance: number } | null>(null);
+  const measureModeRef = useRef(measureMode);
+  const measurePointsRef = useRef(measurePoints);
+  const measureResultRef = useRef(measureResult);
+  const pixelsPerFootRef = useRef(pixelsPerFoot);
+  const onMeasureModeChangeRef = useRef(onMeasureModeChange);
+  const onCalibrationPixelDistanceRef = useRef(onCalibrationPixelDistance);
+  const onMeasurementCompleteRef = useRef(onMeasurementComplete);
+
   useEffect(() => {
     strikeZoneConfigRef.current = strikeZoneConfig;
     showStrikeZoneRef.current = showStrikeZone;
@@ -226,7 +253,15 @@ export function PoseDetector({
     activeDrawingRef.current = activeDrawing;
     activeDrawToolRef.current = activeDrawTool;
     activeDrawColorRef.current = activeDrawColor;
-    
+
+    measureModeRef.current = measureMode;
+    measurePointsRef.current = measurePoints;
+    measureResultRef.current = measureResult;
+    pixelsPerFootRef.current = pixelsPerFoot;
+    onMeasureModeChangeRef.current = onMeasureModeChange;
+    onCalibrationPixelDistanceRef.current = onCalibrationPixelDistance;
+    onMeasurementCompleteRef.current = onMeasurementComplete;
+
     // If we've got visual state changes while the video is paused or stopped,
     // request a single frame redraw to render the updates immediately.
     const isVideoStopped = videoRef.current && (videoRef.current.paused || videoRef.current.ended);
@@ -1060,6 +1095,9 @@ export function PoseDetector({
       // Render custom annotations (telestrator drawing lines)
       drawAnnotations(ctx, canvas.width, canvas.height);
 
+      // Render the calibration/measurement line, if any
+      drawMeasurement(ctx, canvas.width, canvas.height);
+
       // Reset single frame request flag after drawing
       singleFrameAnalyzeRequestedRef.current = false;
 
@@ -1164,7 +1202,15 @@ export function PoseDetector({
         undoDrawing();
         return;
       }
-      
+
+      // Escape cancels an in-progress calibration/measurement
+      if (e.key === 'Escape' && measureModeRef.current !== 'none') {
+        e.preventDefault();
+        setMeasurePoints([]);
+        onMeasureModeChangeRef.current?.('none');
+        return;
+      }
+
       if (feedSourceRef.current === 'camera') return;
       
       switch (e.key) {
@@ -1348,6 +1394,62 @@ export function PoseDetector({
     });
   };
 
+  // Draws the in-progress calibration/measurement drag, or the last completed
+  // measurement result, as a dashed line with an endpoint-to-endpoint distance
+  // label (in feet once calibrated, otherwise raw pixels).
+  const drawMeasurement = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const pts = measurePointsRef.current.length === 2
+      ? measurePointsRef.current
+      : measureResultRef.current?.points ?? null;
+    if (!pts || pts.length < 2) return;
+
+    const sx = pts[0].x * width;
+    const sy = pts[0].y * height;
+    const ex = pts[1].x * width;
+    const ey = pts[1].y * height;
+    const pixelDistance = Math.sqrt((ex - sx) ** 2 + (ey - sy) ** 2);
+
+    const color = measureModeRef.current === 'calibrate' ? '#f59e0b' : '#38bdf8';
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    [[sx, sy], [ex, ey]].forEach(([x, y]) => {
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+    });
+
+    let label: string;
+    if (measureModeRef.current === 'calibrate') {
+      label = `${pixelDistance.toFixed(0)} px`;
+    } else if (pixelsPerFootRef.current) {
+      label = `${(pixelDistance / pixelsPerFootRef.current).toFixed(2)} ft`;
+    } else {
+      label = `${pixelDistance.toFixed(0)} px (not calibrated)`;
+    }
+
+    const midX = (sx + ex) / 2;
+    const midY = (sy + ey) / 2;
+    ctx.font = 'bold 14px "JetBrains Mono", monospace';
+    const textWidth = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.85)';
+    ctx.fillRect(midX - textWidth / 2 - 6, midY - 12, textWidth + 12, 22);
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, midX, midY - 1);
+    ctx.restore();
+  };
+
   const undoDrawing = () => {
     setDrawings(prev => prev.slice(0, -1));
     singleFrameAnalyzeRequestedRef.current = true;
@@ -1515,6 +1617,18 @@ export function PoseDetector({
 
   // Handle dragging and clicking on the canvas
   const handleStart = (clientX: number, clientY: number) => {
+    if (measureModeRef.current !== 'none') {
+      const layout = getCanvasLayout();
+      if (!layout) return;
+      const clickX = clientX - layout.rect.left;
+      const clickY = clientY - layout.rect.top;
+      const px = Math.max(0, Math.min(1, (clickX - layout.offsetX) / layout.drawnWidth));
+      const py = Math.max(0, Math.min(1, (clickY - layout.offsetY) / layout.drawnHeight));
+      setMeasurePoints([{ x: px, y: py }]);
+      singleFrameAnalyzeRequestedRef.current = true;
+      return;
+    }
+
     const drawTool = activeDrawToolRef.current;
     if (drawTool !== 'none') {
       const layout = getCanvasLayout();
@@ -1576,6 +1690,20 @@ export function PoseDetector({
   };
 
   const handleMove = (clientX: number, clientY: number) => {
+    if (measureModeRef.current !== 'none') {
+      if (measurePointsRef.current.length === 1) {
+        const layout = getCanvasLayout();
+        if (!layout) return;
+        const clickX = clientX - layout.rect.left;
+        const clickY = clientY - layout.rect.top;
+        const px = Math.max(0, Math.min(1, (clickX - layout.offsetX) / layout.drawnWidth));
+        const py = Math.max(0, Math.min(1, (clickY - layout.offsetY) / layout.drawnHeight));
+        setMeasurePoints([measurePointsRef.current[0], { x: px, y: py }]);
+        singleFrameAnalyzeRequestedRef.current = true;
+      }
+      return;
+    }
+
     const drawTool = activeDrawToolRef.current;
     if (drawTool !== 'none') {
       const layout = getCanvasLayout();
@@ -1705,6 +1833,31 @@ export function PoseDetector({
   };
 
   const handleEnd = (clientX: number, clientY: number, wasClick: boolean) => {
+    if (measureModeRef.current !== 'none') {
+      const pts = measurePointsRef.current;
+      if (pts.length === 2) {
+        const canvas = canvasRef.current;
+        const w = canvas?.width || 0;
+        const h = canvas?.height || 0;
+        const dx = (pts[1].x - pts[0].x) * w;
+        const dy = (pts[1].y - pts[0].y) * h;
+        const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+
+        if (measureModeRef.current === 'calibrate') {
+          onCalibrationPixelDistanceRef.current?.(pixelDistance);
+        } else {
+          setMeasureResult({ points: pts, pixelDistance });
+          if (pixelsPerFootRef.current) {
+            onMeasurementCompleteRef.current?.(pixelDistance / pixelsPerFootRef.current);
+          }
+        }
+        onMeasureModeChangeRef.current?.('none');
+      }
+      setMeasurePoints([]);
+      singleFrameAnalyzeRequestedRef.current = true;
+      return;
+    }
+
     const drawTool = activeDrawToolRef.current;
     if (drawTool !== 'none') {
       if (activeDrawingRef.current && activeDrawingRef.current.points.length >= 2) {
@@ -2017,6 +2170,25 @@ export function PoseDetector({
               </div>
             )}
           </div>
+
+          {/* Calibration / Measurement hint banner - only shown while actively picking two points */}
+          {measureMode !== 'none' && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 px-3.5 py-2 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-lg shadow-lg">
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${measureMode === 'calibrate' ? 'text-amber-300' : 'text-sky-300'}`}>
+                {measureMode === 'calibrate' ? 'Calibrating' : 'Measuring'}: click and drag across a known distance
+              </span>
+              <button
+                onClick={() => {
+                  setMeasurePoints([]);
+                  onMeasureModeChange?.('none');
+                }}
+                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                title="Cancel (Esc)"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Telestrator Toggle Button - the drawing tools stay off-canvas until called on demand */}
           <button
