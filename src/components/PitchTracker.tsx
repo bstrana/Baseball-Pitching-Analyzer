@@ -40,6 +40,22 @@ function getPitchHexColor(type: PitchType) {
   }
 }
 
+function getPitchAbbreviation(type: PitchType) {
+  switch (type) {
+    case 'Fastball': return 'FB';
+    case 'Curveball': return 'CB';
+    case 'Slider': return 'SL';
+    case 'Changeup': return 'CH';
+    case 'Cutter': return 'CT';
+    case 'Sinker': return 'SI';
+    case 'Splitter': return 'SP';
+    case 'Knuckleball': return 'KN';
+    case 'Forkball': return 'FO';
+    case 'Screwball': return 'SC';
+    default: return type;
+  }
+}
+
 interface PitchTrackerProps {
   pitches: Pitch[];
   onAddPitch: (pitch: Pitch) => void;
@@ -408,8 +424,11 @@ export function PitchLog({
                   >
                     <td className="py-2.5 px-3 font-bold text-slate-400">{pitch.number}</td>
                     <td className="py-2.5 px-2">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wider font-sans uppercase whitespace-nowrap ${getPitchColor(pitch.type)}`}>
-                        {pitch.type}
+                      <span
+                        title={pitch.type}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wider font-sans uppercase whitespace-nowrap ${getPitchColor(pitch.type)}`}
+                      >
+                        {getPitchAbbreviation(pitch.type)}
                       </span>
                     </td>
                     <td className="py-2.5 px-2 font-bold text-white">{pitch.velocity}</td>
