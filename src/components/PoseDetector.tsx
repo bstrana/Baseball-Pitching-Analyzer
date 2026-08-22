@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn } from 'lucide-react';
-import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, classifyPitch } from '../types';
+import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, classifyPitch, classifyMiss, getTargetZoneLabel } from '../types';
 
 // Required to initialize the WebGL backend
 import '@tensorflow/tfjs-backend-webgl';
@@ -109,6 +109,14 @@ interface PoseDetectorProps {
   // Name of the player this session is being recorded for, shown as a
   // top-center overlay on the video canvas.
   currentPlayerName?: string;
+
+  // Target Mode: a draggable target circle is placed before each pitch: the
+  // first tap on the canvas plants it, the next tap logs where the pitch
+  // actually landed and grades the miss against it. Replaces the plain
+  // click-to-log flow while active. pitcherHandedness only relabels the
+  // existing zone geometry (glove side / arm side) for display.
+  targetMode?: boolean;
+  pitcherHandedness?: PitcherHandedness;
 }
 
 export function PoseDetector({
@@ -142,7 +150,9 @@ export function PoseDetector({
   onCameraZoomChange,
   cameraFacingMode = 'environment',
   onAnalysisStatusChange,
-  currentPlayerName
+  currentPlayerName,
+  targetMode = false,
+  pitcherHandedness = 'right'
 }: PoseDetectorProps) {
   // Pitch stats for the on-canvas overlay (Pitches / Strike % / Max Velo)
   const pitchStrikes = pitches.filter(p => p.isStrike).length;
@@ -167,6 +177,13 @@ export function PoseDetector({
       maxVelo: s.maxVelo,
     }))
     .sort((a, b) => b.count - a.count);
+
+  // Target Mode accuracy tally for the on-canvas overlay, counting only
+  // pitches that were actually thrown at a target
+  const targetGradedPitches = pitches.filter(p => p.missResult);
+  const targetOnCount = targetGradedPitches.filter(p => p.missResult === 'on-target').length;
+  const targetGoodMissCount = targetGradedPitches.filter(p => p.missResult === 'good-miss').length;
+  const targetBadMissCount = targetGradedPitches.filter(p => p.missResult === 'bad-miss').length;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -237,6 +254,16 @@ export function PoseDetector({
   } | null>(null);
   
   const pressPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Target Mode: the pending target (planted before a pitch, cleared once
+  // that pitch is logged) and whether it's currently being dragged. Kept as
+  // refs only, like the zone-drag/measurement/drawing state above - the
+  // render loop reads them fresh every animation frame, so no React state
+  // (and its extra re-renders) is needed to keep the circle on screen.
+  const targetModeRef = useRef(targetMode);
+  const pitcherHandednessRef = useRef(pitcherHandedness);
+  const targetPosRef = useRef<{ x: number; y: number } | null>(null);
+  const targetDragRef = useRef(false);
 
   // Video scrubber state
   const [videoDuration, setVideoDuration] = useState<number>(0);
@@ -337,6 +364,8 @@ export function PoseDetector({
     onMeasurementCompleteRef.current = onMeasurementComplete;
     measurementUnitRef.current = measurementUnit;
     onAnalysisStatusChangeRef.current = onAnalysisStatusChange;
+    targetModeRef.current = targetMode;
+    pitcherHandednessRef.current = pitcherHandedness;
 
     // If we've got visual state changes while the video is paused or stopped,
     // request a single frame redraw to render the updates immediately.
@@ -1173,6 +1202,7 @@ export function PoseDetector({
       if (appModeRef.current === 'pitching') {
         drawStrikeZoneOverlay(ctx, canvas.width, canvas.height);
         drawPitchesOverlay(ctx, canvas.width, canvas.height);
+        drawTargetOverlay(ctx, canvas.width, canvas.height);
       }
 
       // Render custom annotations (telestrator drawing lines)
@@ -1341,6 +1371,19 @@ export function PoseDetector({
   useEffect(() => {
     onAnalysisStatusChangeRef.current?.(isPaused);
   }, [isPaused]);
+
+  // Clear any pending (not-yet-thrown) target when Target Mode is turned off
+  // or the app leaves pitching mode, so it doesn't linger and get attached
+  // to a pitch logged after re-enabling it.
+  useEffect(() => {
+    if (!targetMode || appMode !== 'pitching') {
+      targetPosRef.current = null;
+      targetDragRef.current = false;
+      if (isPausedRef.current) {
+        singleFrameAnalyzeRequestedRef.current = true;
+      }
+    }
+  }, [targetMode, appMode]);
 
   // Drawing Utilities
   const drawKeypoints = (keypoints: poseDetection.Keypoint[], ctx: CanvasRenderingContext2D) => {
@@ -1627,6 +1670,15 @@ export function PoseDetector({
     }
   };
 
+  // Target Mode miss-grade ring colors, drawn around a pitch marker when it
+  // was thrown against a target: emerald = on target, amber = close (good
+  // miss), red = well off (bad miss).
+  const MISS_RESULT_COLORS: Record<string, string> = {
+    'on-target': '#34d399',
+    'good-miss': '#fbbf24',
+    'bad-miss': '#f87171',
+  };
+
   // Drawing Plotted Pitches
   const drawPitchesOverlay = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     pitchesRef.current.forEach((pitch) => {
@@ -1646,6 +1698,15 @@ export function PoseDetector({
         ctx.fill();
         ctx.strokeStyle = isSelected ? '#38bdf8' : '#ffffff';
         ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // Target Mode: ring the marker with its miss grade
+      if (pitch.missResult) {
+        ctx.beginPath();
+        ctx.arc(pX, pY, 11, 0, 2 * Math.PI);
+        ctx.strokeStyle = MISS_RESULT_COLORS[pitch.missResult];
+        ctx.lineWidth = 2;
         ctx.stroke();
       }
 
@@ -1683,6 +1744,43 @@ export function PoseDetector({
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
     });
+  };
+
+  // Draws the pending Target Mode target: a dashed crosshair circle planted
+  // before a pitch is thrown, cleared once that pitch is logged.
+  const drawTargetOverlay = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    if (!targetModeRef.current) return;
+    const target = targetPosRef.current;
+    if (!target) return;
+
+    const tX = target.x * width;
+    const tY = target.y * height;
+    const radius = 16;
+    const color = '#facc15'; // amber-400
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.arc(tX, tY, radius, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.beginPath();
+    ctx.moveTo(tX - 6, tY);
+    ctx.lineTo(tX + 6, tY);
+    ctx.moveTo(tX, tY - 6);
+    ctx.lineTo(tX, tY + 6);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.font = 'bold 9px "Inter", sans-serif';
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.fillText('TARGET', tX, tY - radius - 6);
+    ctx.textAlign = 'left';
+    ctx.restore();
   };
 
   // Helper to map screen coordinates to the actual drawn content inside the canvas,
@@ -1758,6 +1856,28 @@ export function PoseDetector({
       };
       setActiveDrawing(newDrawing);
       singleFrameAnalyzeRequestedRef.current = true;
+      return;
+    }
+
+    // Target Mode takes over the canvas entirely while active - the zone
+    // isn't draggable/resizable during it, so every press either arms a drag
+    // on the existing target (if pressed near it) or does nothing here and
+    // is resolved as a plant/log tap in handleEnd.
+    if (targetModeRef.current && appModeRef.current === 'pitching') {
+      const target = targetPosRef.current;
+      if (target) {
+        const layout = getCanvasLayout();
+        if (layout) {
+          const clickX = clientX - layout.rect.left;
+          const clickY = clientY - layout.rect.top;
+          const tX = layout.offsetX + target.x * layout.drawnWidth;
+          const tY = layout.offsetY + target.y * layout.drawnHeight;
+          if (getDistance(clickX, clickY, tX, tY) < 24) {
+            targetDragRef.current = true;
+            singleFrameAnalyzeRequestedRef.current = true;
+          }
+        }
+      }
       return;
     }
 
@@ -1849,6 +1969,23 @@ export function PoseDetector({
         }
         singleFrameAnalyzeRequestedRef.current = true;
       }
+      return;
+    }
+
+    if (targetModeRef.current && appModeRef.current === 'pitching') {
+      if (targetDragRef.current) {
+        const layout = getCanvasLayout();
+        if (layout) {
+          const clickX = clientX - layout.rect.left;
+          const clickY = clientY - layout.rect.top;
+          const px = Math.max(0, Math.min(1, (clickX - layout.offsetX) / layout.drawnWidth));
+          const py = Math.max(0, Math.min(1, (clickY - layout.offsetY) / layout.drawnHeight));
+          targetPosRef.current = { x: px, y: py };
+          singleFrameAnalyzeRequestedRef.current = true;
+        }
+      }
+      const canvas = canvasRef.current;
+      if (canvas) canvas.style.cursor = targetDragRef.current ? 'grabbing' : 'crosshair';
       return;
     }
 
@@ -1984,6 +2121,73 @@ export function PoseDetector({
       setActiveDrawing(null);
       // Force immediate redraw
       singleFrameAnalyzeRequestedRef.current = true;
+      return;
+    }
+
+    if (targetModeRef.current && appModeRef.current === 'pitching') {
+      const wasDraggingTarget = targetDragRef.current;
+      targetDragRef.current = false;
+      if (wasDraggingTarget) {
+        singleFrameAnalyzeRequestedRef.current = true;
+        // A press that started near the target but never actually moved
+        // (wasClick) falls through below and logs a bullseye pitch there,
+        // same as tapping the strike zone without dragging it.
+        if (!wasClick) return;
+      }
+
+      if (wasClick && isLoaded) {
+        const layout = getCanvasLayout();
+        if (!layout) return;
+
+        const clickX = clientX - layout.rect.left;
+        const clickY = clientY - layout.rect.top;
+        const px = Math.max(0, Math.min(1, (clickX - layout.offsetX) / layout.drawnWidth));
+        const py = Math.max(0, Math.min(1, (clickY - layout.offsetY) / layout.drawnHeight));
+
+        const target = targetPosRef.current;
+        if (!target) {
+          // First tap of the pitch: plant the target, don't log a pitch yet
+          targetPosRef.current = { x: px, y: py };
+          singleFrameAnalyzeRequestedRef.current = true;
+          return;
+        }
+
+        // Second tap: this is where the pitch actually landed
+        const config = strikeZoneConfigRef.current;
+        const classification = classifyPitch(px, py, config);
+        const missResult = classifyMiss(target.x, target.y, px, py, config);
+        const handedness = pitcherHandednessRef.current;
+
+        const nowMs = performance.now();
+        const capturedKinematics = rollingKinematicsRef.current.map(p => ({
+          time: parseFloat(((p.timestamp - nowMs) / 1000).toFixed(2)),
+          hip: p.hip,
+          shoulder: p.shoulder,
+          wrist: p.wrist
+        }));
+
+        const newPitch: Pitch = {
+          id: crypto.randomUUID(),
+          number: pitchesRef.current.length + 1,
+          type: currentPitchTypeRef.current,
+          velocity: currentPitchSpeedRef.current,
+          x: px,
+          y: py,
+          isStrike: classification.isStrike,
+          zone: classification.zone,
+          timestamp: new Date(),
+          kinematicsData: capturedKinematics,
+          targetX: target.x,
+          targetY: target.y,
+          missResult,
+          targetZoneLabel: getTargetZoneLabel(target.x, target.y, config, handedness),
+          pitchZoneLabel: getTargetZoneLabel(px, py, config, handedness),
+        };
+
+        onAddPitchRef.current(newPitch);
+        targetPosRef.current = null;
+        singleFrameAnalyzeRequestedRef.current = true;
+      }
       return;
     }
 
@@ -2648,6 +2852,26 @@ export function PoseDetector({
                   <span className="text-sky-400 font-bold w-9 text-right">{maxVelo}mph</span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Target Mode accuracy tally - only once at least one pitch has been graded */}
+          {appMode === 'pitching' && targetGradedPitches.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg px-1 py-1">
+              <div className="px-2 py-0.5 text-center">
+                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">On Target</p>
+                <p className="text-sm font-mono text-emerald-400 font-bold leading-none mt-0.5">{targetOnCount}</p>
+              </div>
+              <div className="w-px h-6 bg-slate-700/60" />
+              <div className="px-2 py-0.5 text-center">
+                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Good Miss</p>
+                <p className="text-sm font-mono text-amber-400 font-bold leading-none mt-0.5">{targetGoodMissCount}</p>
+              </div>
+              <div className="w-px h-6 bg-slate-700/60" />
+              <div className="px-2 py-0.5 text-center">
+                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Bad Miss</p>
+                <p className="text-sm font-mono text-red-400 font-bold leading-none mt-0.5">{targetBadMissCount}</p>
+              </div>
             </div>
           )}
           </div>

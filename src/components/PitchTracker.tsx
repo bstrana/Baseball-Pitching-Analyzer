@@ -1,6 +1,6 @@
 import React from 'react';
-import { Pitch, PitchType, StrikeZoneConfig, classifyPitch } from '../types';
-import { Target, Trash2, Gauge, RotateCcw, Sliders, Layers, Eye, EyeOff, Lock, Unlock } from 'lucide-react';
+import { Pitch, PitchType, StrikeZoneConfig, PitcherHandedness, classifyPitch } from '../types';
+import { Target, Trash2, Gauge, RotateCcw, Sliders, Layers, Eye, EyeOff, Lock, Unlock, Crosshair, Flag, RefreshCw } from 'lucide-react';
 
 const PITCH_TYPES: PitchType[] = [
   'Fastball', 'Curveball', 'Slider', 'Changeup', 'Cutter', 'Sinker',
@@ -56,6 +56,15 @@ function getPitchAbbreviation(type: PitchType) {
   }
 }
 
+function getMissResultStyle(result: Pitch['missResult']) {
+  switch (result) {
+    case 'on-target': return { label: 'On Target', className: 'text-emerald-400' };
+    case 'good-miss': return { label: 'Good Miss', className: 'text-amber-400' };
+    case 'bad-miss': return { label: 'Bad Miss', className: 'text-red-400' };
+    default: return null;
+  }
+}
+
 interface PitchTrackerProps {
   pitches: Pitch[];
   onAddPitch: (pitch: Pitch) => void;
@@ -73,6 +82,10 @@ interface PitchTrackerProps {
   setCurrentPitchSpeed: (speed: number) => void;
   selectedPitchId: string | null;
   setSelectedPitchId: (id: string | null) => void;
+  targetMode: boolean;
+  setTargetMode: (enabled: boolean) => void;
+  pitcherHandedness: PitcherHandedness;
+  setPitcherHandedness: (handedness: PitcherHandedness) => void;
 }
 
 export function PitchTracker({
@@ -92,6 +105,10 @@ export function PitchTracker({
   setCurrentPitchSpeed,
   selectedPitchId,
   setSelectedPitchId,
+  targetMode,
+  setTargetMode,
+  pitcherHandedness,
+  setPitcherHandedness,
 }: PitchTrackerProps) {
 
   // Handle manual plotting on the mini strike zone chart
@@ -151,6 +168,24 @@ export function PitchTracker({
             >
               <Gauge className="w-3.5 h-3.5" />
               {showPitchSpeeds ? 'Speed On' : 'Speed Off'}
+            </button>
+            <button
+              onClick={() => setTargetMode(!targetMode)}
+              title={targetMode
+                ? 'Target Mode on - tap the video canvas to plant a target, then tap again where the pitch lands to grade it.'
+                : 'Target Mode off - tap the video canvas to plant a target before each pitch and grade misses against it.'}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${targetMode ? 'bg-amber-950/40 border-amber-500/50 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+              {targetMode ? 'Target Mode On' : 'Target Mode Off'}
+            </button>
+            <button
+              onClick={() => setPitcherHandedness(pitcherHandedness === 'right' ? 'left' : 'right')}
+              title="Pitcher's throwing hand - only relabels Target Mode's glove side / arm side, doesn't change zone geometry."
+              className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border bg-slate-800 border-slate-700 text-slate-400 hover:text-white transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Throws {pitcherHandedness === 'right' ? 'R' : 'L'}
             </button>
           </div>
         </div>
@@ -364,6 +399,7 @@ interface PitchLogProps {
   onClearPitches: () => void;
   selectedPitchId: string | null;
   setSelectedPitchId: (id: string | null) => void;
+  onToggleBadShape: (id: string) => void;
 }
 
 export function PitchLog({
@@ -372,6 +408,7 @@ export function PitchLog({
   onClearPitches,
   selectedPitchId,
   setSelectedPitchId,
+  onToggleBadShape,
 }: PitchLogProps) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col h-full min-h-[220px]">
@@ -432,13 +469,28 @@ export function PitchLog({
                       </span>
                     </td>
                     <td className="py-2.5 px-2 font-bold text-white">{pitch.velocity}</td>
-                    <td className="py-2.5 px-2 truncate max-w-[90px] text-slate-300 font-sans" title={pitch.zone}>
+                    <td className="py-2.5 px-2 truncate max-w-[90px] text-slate-300 font-sans" title={pitch.targetZoneLabel ? `${pitch.zone} - Target: ${pitch.targetZoneLabel}` : pitch.zone}>
                       <span className={pitch.isStrike ? 'text-red-400' : 'text-emerald-400'}>
                         ●
                       </span>{' '}
                       {pitch.zone.split(' (')[0]}
+                      {pitch.missResult && (() => {
+                        const miss = getMissResultStyle(pitch.missResult);
+                        return miss ? (
+                          <span className={`block text-[9px] font-bold uppercase tracking-wider ${miss.className}`}>
+                            {miss.label}
+                          </span>
+                        ) : null;
+                      })()}
                     </td>
-                    <td className="py-2.5 px-3 text-right">
+                    <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => onToggleBadShape(pitch.id)}
+                        title={pitch.badShape ? 'Flagged as bad shape (flat curve, hanging slider, etc.) - click to clear' : 'Flag as bad shape (flat curve, hanging slider, etc.)'}
+                        className={`p-1 rounded hover:bg-orange-500/10 transition-colors inline-block ${pitch.badShape ? 'text-orange-400' : 'text-slate-600 hover:text-orange-400'}`}
+                      >
+                        <Flag className="w-3.5 h-3.5" fill={pitch.badShape ? 'currentColor' : 'none'} />
+                      </button>
                       <button
                         onClick={() => onRemovePitch(pitch.id)}
                         className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-red-500/10 transition-colors inline-block"

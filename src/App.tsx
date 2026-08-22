@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker, PitchLog } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
-import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
+import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness } from './types';
 import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
@@ -217,6 +217,11 @@ export default function App() {
   const [currentPitchType, setCurrentPitchType] = useState<PitchType>('Fastball');
   const [currentPitchSpeed, setCurrentPitchSpeed] = useState<number>(92);
   const [selectedPitchId, setSelectedPitchId] = useState<string | null>(null);
+  // Target Mode: a draggable target circle placed before each pitch, graded
+  // against where the pitch actually landed. pitcherHandedness only relabels
+  // the glove side / arm side wording, it doesn't change zone geometry.
+  const [targetMode, setTargetMode] = useState(false);
+  const [pitcherHandedness, setPitcherHandedness] = useState<PitcherHandedness>('right');
 
   const handleAddPitch = (pitch: Pitch) => {
     setPitches(prev => [...prev, pitch]);
@@ -228,6 +233,10 @@ export default function App() {
 
   const handleClearPitches = () => {
     setPitches([]);
+  };
+
+  const handleToggleBadShape = (id: string) => {
+    setPitches(prev => prev.map(p => p.id === id ? { ...p, badShape: !p.badShape } : p));
   };
 
   const handleExportSession = () => {
@@ -458,6 +467,7 @@ export default function App() {
                 onClearPitches={handleClearPitches}
                 selectedPitchId={selectedPitchId}
                 setSelectedPitchId={setSelectedPitchId}
+                onToggleBadShape={handleToggleBadShape}
               />
             </div>
             {/* Drag to resize - right edge of this sidebar */}
@@ -512,6 +522,8 @@ export default function App() {
                  cameraFacingMode={cameraFacingMode}
                  onAnalysisStatusChange={setAnalysisPaused}
                  currentPlayerName={selectedPlayer?.name}
+                 targetMode={targetMode}
+                 pitcherHandedness={pitcherHandedness}
                />
             </div>
           </div>
@@ -648,6 +660,10 @@ export default function App() {
                 setCurrentPitchSpeed={setCurrentPitchSpeed}
                 selectedPitchId={selectedPitchId}
                 setSelectedPitchId={setSelectedPitchId}
+                targetMode={targetMode}
+                setTargetMode={setTargetMode}
+                pitcherHandedness={pitcherHandedness}
+                setPitcherHandedness={setPitcherHandedness}
               />
 
               {/* Pitch log lives in the left column on lg+; keep it reachable
@@ -659,6 +675,7 @@ export default function App() {
                   onClearPitches={handleClearPitches}
                   selectedPitchId={selectedPitchId}
                   setSelectedPitchId={setSelectedPitchId}
+                  onToggleBadShape={handleToggleBadShape}
                 />
               </div>
             </div>
