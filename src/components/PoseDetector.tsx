@@ -78,7 +78,6 @@ interface PoseDetectorProps {
   // Optional toggles for HUD integration
   setShowSkeleton?: (show: boolean) => void;
   setShowTrajectory?: (show: boolean) => void;
-  setShowStrikeZone?: (show: boolean) => void;
 
   // App Mode and Config Changes
   appMode?: 'mechanics' | 'pitching';
@@ -102,6 +101,14 @@ interface PoseDetectorProps {
   // Controlled entirely from the off-canvas Settings menu - changing it here
   // restarts the webcam stream with the new lens.
   cameraFacingMode?: 'user' | 'environment';
+
+  // Reports live/paused status upward so the top bar can show it (replaces
+  // the on-canvas "ANALYSIS ACTIVE"/"FEED PAUSED" indicator).
+  onAnalysisStatusChange?: (isPaused: boolean) => void;
+
+  // Name of the player this session is being recorded for, shown as a
+  // top-center overlay on the video canvas.
+  currentPlayerName?: string;
 }
 
 export function PoseDetector({
@@ -123,7 +130,6 @@ export function PoseDetector({
   visibleMarkers,
   setShowSkeleton,
   setShowTrajectory,
-  setShowStrikeZone,
   appMode = 'mechanics',
   onConfigChange,
   measureMode = 'none',
@@ -134,7 +140,9 @@ export function PoseDetector({
   measurementUnit = 'ft',
   cameraZoom = 1,
   onCameraZoomChange,
-  cameraFacingMode = 'environment'
+  cameraFacingMode = 'environment',
+  onAnalysisStatusChange,
+  currentPlayerName
 }: PoseDetectorProps) {
   // Pitch stats for the on-canvas overlay (Pitches / Strike % / Max Velo)
   const pitchStrikes = pitches.filter(p => p.isStrike).length;
@@ -295,6 +303,7 @@ export function PoseDetector({
   const onCalibrationPixelDistanceRef = useRef(onCalibrationPixelDistance);
   const onMeasurementCompleteRef = useRef(onMeasurementComplete);
   const measurementUnitRef = useRef(measurementUnit);
+  const onAnalysisStatusChangeRef = useRef(onAnalysisStatusChange);
 
   useEffect(() => {
     strikeZoneConfigRef.current = strikeZoneConfig;
@@ -327,6 +336,7 @@ export function PoseDetector({
     onCalibrationPixelDistanceRef.current = onCalibrationPixelDistance;
     onMeasurementCompleteRef.current = onMeasurementComplete;
     measurementUnitRef.current = measurementUnit;
+    onAnalysisStatusChangeRef.current = onAnalysisStatusChange;
 
     // If we've got visual state changes while the video is paused or stopped,
     // request a single frame redraw to render the updates immediately.
@@ -1326,6 +1336,11 @@ export function PoseDetector({
       setActiveDrawTool('none');
     }
   }, [appMode]);
+
+  // Report live/paused status upward for the top bar's status badge
+  useEffect(() => {
+    onAnalysisStatusChangeRef.current?.(isPaused);
+  }, [isPaused]);
 
   // Drawing Utilities
   const drawKeypoints = (keypoints: poseDetection.Keypoint[], ctx: CanvasRenderingContext2D) => {
@@ -2336,16 +2351,10 @@ export function PoseDetector({
       {/* DYNAMIC TELEMETRY / STATUS OVERLAYS */}
       {isLoaded && !error && (
         <>
-          {/* Top Left Status Overlay */}
+          {/* Top Left Status Overlay - the ANALYSIS ACTIVE/FEED PAUSED indicator
+              itself now lives in the top nav bar (see onAnalysisStatusChange) */}
           <div className="absolute top-3 left-3 z-20 flex flex-col gap-1.5 pointer-events-none">
             <div className="px-2.5 py-1.5 bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg flex items-center gap-2 shadow-lg">
-              <span className="relative flex h-2 w-2">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isPaused ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${isPaused ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
-              </span>
-              <span className="text-[10px] font-bold font-mono text-white uppercase tracking-wider">
-                {isPaused ? 'FEED PAUSED' : 'ANALYSIS ACTIVE'}
-              </span>
               <span className="text-[9px] font-mono text-slate-400 px-1.5 py-0.5 bg-slate-800/80 rounded border border-slate-700/50 uppercase">
                 {feedSource === 'camera' ? 'WEBCAM' : feedSource === 'demo' ? 'DEMO FILE' : 'UPLOAD'}
               </span>
@@ -2360,6 +2369,13 @@ export function PoseDetector({
               </div>
             )}
           </div>
+
+          {/* Current player - top center, who this session is being recorded for */}
+          {currentPlayerName && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg pointer-events-none">
+              <span className="text-[10px] font-bold font-mono text-white uppercase tracking-wider">{currentPlayerName}</span>
+            </div>
+          )}
 
           {/* Calibration / Measurement hint banner - only shown while actively picking two points */}
           {measureMode !== 'none' && (
@@ -2587,21 +2603,6 @@ export function PoseDetector({
               >
                 {showTrajectory ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                 <span className="text-[9px] font-bold uppercase tracking-wider ml-1 hidden sm:inline">Trajectory</span>
-              </button>
-            )}
-
-            {appMode === 'pitching' && setShowStrikeZone && (
-              <button
-                onClick={() => setShowStrikeZone(!showStrikeZone)}
-                className={`p-2 rounded-lg border backdrop-blur-md transition-all shadow-lg flex items-center justify-center ${
-                  showStrikeZone
-                    ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
-                    : 'bg-black/70 border-slate-700/50 text-slate-400 hover:text-white'
-                }`}
-                title="Toggle Strike Zone overlay"
-              >
-                <Target className="w-4 h-4" />
-                <span className="text-[9px] font-bold uppercase tracking-wider ml-1 hidden sm:inline">Strike Zone</span>
               </button>
             )}
           </div>

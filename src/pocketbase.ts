@@ -115,3 +115,15 @@ export async function listPitchSessions(playerId: string): Promise<PitchSessionR
     sort: '-recorded_at',
   });
 }
+
+// Combined mechanics + pitch session count for one player, for the roster
+// list - uses getList(1, 1) so PocketBase only has to report totalItems
+// rather than the full record set.
+export async function getPlayerSessionCount(playerId: string): Promise<number> {
+  const filter = pb.filter('player = {:playerId}', { playerId });
+  const [mechanics, pitch] = await Promise.all([
+    pb.collection('mechanics_sessions').getList(1, 1, { filter, fields: 'id' }),
+    pb.collection('pitch_sessions').getList(1, 1, { filter, fields: 'id' }),
+  ]);
+  return mechanics.totalItems + pitch.totalItems;
+}
