@@ -13,6 +13,21 @@ const getDistance = (x1: number, y1: number, x2: number, y2: number) => {
 
 const FEET_PER_METER = 3.28084;
 
+const PITCH_TYPE_COLORS: Record<PitchType, string> = {
+  Fastball: '#ef4444',
+  Curveball: '#3b82f6',
+  Slider: '#f59e0b',
+  Changeup: '#10b981',
+  Cutter: '#a855f7',
+  Sinker: '#ec4899',
+  Splitter: '#06b6d4',
+  Knuckleball: '#84cc16',
+  Forkball: '#f97316',
+  Screwball: '#6366f1',
+};
+
+const getPitchTypeColor = (type: PitchType): string => PITCH_TYPE_COLORS[type] || '#64748b';
+
 export interface PoseMetrics {
   rightArmAngle: number;
   leftArmAngle: number;
@@ -125,6 +140,25 @@ export function PoseDetector({
   const pitchStrikes = pitches.filter(p => p.isStrike).length;
   const pitchStrikePercentage = pitches.length > 0 ? Math.round((pitchStrikes / pitches.length) * 100) : 0;
   const pitchMaxVelo = pitches.length > 0 ? Math.max(...pitches.map(p => p.velocity)) : 0;
+
+  // Same breakdown, per pitch type, for the rows listed under the totals -
+  // only types that have actually been thrown, most-thrown first.
+  const pitchStatsByType = Object.entries(
+    pitches.reduce((acc, p) => {
+      if (!acc[p.type]) acc[p.type] = { count: 0, strikes: 0, maxVelo: 0 };
+      acc[p.type].count += 1;
+      if (p.isStrike) acc[p.type].strikes += 1;
+      acc[p.type].maxVelo = Math.max(acc[p.type].maxVelo, p.velocity);
+      return acc;
+    }, {} as Record<string, { count: number; strikes: number; maxVelo: number }>)
+  )
+    .map(([type, s]) => ({
+      type: type as PitchType,
+      count: s.count,
+      strikePercentage: Math.round((s.strikes / s.count) * 100),
+      maxVelo: s.maxVelo,
+    }))
+    .sort((a, b) => b.count - a.count);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1586,16 +1620,7 @@ export function PoseDetector({
       const isSelected = selectedPitchIdRef.current === pitch.id;
 
       // Pitch Color coding
-      let color = '#ef4444'; // Fastball red
-      if (pitch.type === 'Curveball') color = '#3b82f6';
-      else if (pitch.type === 'Slider') color = '#f59e0b';
-      else if (pitch.type === 'Changeup') color = '#10b981';
-      else if (pitch.type === 'Cutter') color = '#a855f7';
-      else if (pitch.type === 'Sinker') color = '#ec4899';
-      else if (pitch.type === 'Splitter') color = '#06b6d4';
-      else if (pitch.type === 'Knuckleball') color = '#84cc16';
-      else if (pitch.type === 'Forkball') color = '#f97316';
-      else if (pitch.type === 'Screwball') color = '#6366f1';
+      const color = getPitchTypeColor(pitch.type);
 
       // Draw highlighted pulsing circle if selected or last pitch
       const isLastPitch = pitch.number === pitchesRef.current.length;
@@ -2603,6 +2628,25 @@ export function PoseDetector({
                 <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Max Velo</p>
                 <p className="text-sm font-mono text-sky-400 font-bold leading-none mt-0.5">{pitchMaxVelo}</p>
               </div>
+            </div>
+          )}
+
+          {/* Same breakdown per pitch type, listed under the totals above */}
+          {appMode === 'pitching' && pitchStatsByType.length > 0 && (
+            <div className="bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg px-2 py-1.5 min-w-[168px]">
+              {pitchStatsByType.map(({ type, count, strikePercentage, maxVelo }) => (
+                <div key={type} className="flex items-center gap-2 text-[9px] font-mono py-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getPitchTypeColor(type) }} />
+                  <span className="text-slate-300 font-sans font-semibold uppercase tracking-wide flex-1 truncate">{type}</span>
+                  <span className="text-white font-bold w-4 text-right">{count}</span>
+                  <span className={`w-9 text-right font-bold ${
+                    strikePercentage >= 60 ? 'text-emerald-400' : strikePercentage >= 45 ? 'text-amber-400' : 'text-slate-400'
+                  }`}>
+                    {strikePercentage}%
+                  </span>
+                  <span className="text-sky-400 font-bold w-9 text-right">{maxVelo}mph</span>
+                </div>
+              ))}
             </div>
           )}
           </div>
