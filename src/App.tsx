@@ -3,9 +3,8 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
-import { Activity, Crosshair, Download, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, LogOut } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { keycloak, keycloakEnabled } from './auth';
 
 export default function App() {
   const [showSetupModal, setShowSetupModal] = useState(false);
@@ -40,6 +39,9 @@ export default function App() {
   // Mobile active tab state
   const [activeMobileTab, setActiveMobileTab] = useState<'feed' | 'pitchcast' | 'settings'>('feed');
 
+  // Live Metrics / Kinematic Sequence panel - collapsed by default, opened from the thin footer bar
+  const [showMetricsPanel, setShowMetricsPanel] = useState(false);
+
   // Active Mode: 'mechanics' or 'pitching'
   const [appMode, setAppMode] = useState<'mechanics' | 'pitching'>('mechanics');
 
@@ -55,7 +57,6 @@ export default function App() {
   const [currentPitchType, setCurrentPitchType] = useState<PitchType>('Fastball');
   const [currentPitchSpeed, setCurrentPitchSpeed] = useState<number>(92);
   const [selectedPitchId, setSelectedPitchId] = useState<string | null>(null);
-  const [showExportDropdown, setShowExportDropdown] = useState(false);
 
   const handleAddPitch = (pitch: Pitch) => {
     setPitches(prev => [...prev, pitch]);
@@ -119,6 +120,39 @@ export default function App() {
 
   const selectedPitch = pitches.find(p => p.id === selectedPitchId) || pitches[pitches.length - 1];
 
+  const modeSelector = (
+    <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
+      <button
+        onClick={() => {
+          setAppMode('mechanics');
+          setActiveMobileTab('feed');
+        }}
+        className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
+          appMode === 'mechanics'
+            ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/20 font-extrabold'
+            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+        }`}
+      >
+        <Activity className="w-4 h-4" />
+        <span>Mechanics Tracker</span>
+      </button>
+      <button
+        onClick={() => {
+          setAppMode('pitching');
+          setActiveMobileTab('feed');
+        }}
+        className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
+          appMode === 'pitching'
+            ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20 font-extrabold'
+            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+        }`}
+      >
+        <Target className="w-4 h-4" />
+        <span>Pitch Tracker</span>
+      </button>
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
       {/* Top Navigation Bar */}
@@ -127,122 +161,23 @@ export default function App() {
           <div className="w-8 h-8 bg-sky-500 rounded flex items-center justify-center">
             <Crosshair className="w-5 h-5 text-white" />
           </div>
-          <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white">BASE<span className="text-sky-400">MECHANICS</span> AI</h1>
           <div className="h-6 w-px bg-slate-700 mx-1 sm:mx-2 hidden sm:block"></div>
           <span className="text-[10px] sm:text-xs font-mono px-2 py-1 bg-slate-800 rounded border border-slate-700 text-sky-400 hidden sm:inline-block">TENSORFLOW READY</span>
         </div>
+        {/* Mode Selector - hidden below sm, shown in the small-screens row instead */}
+        <div className="hidden sm:flex">{modeSelector}</div>
+
         <div className="flex items-center gap-3 sm:gap-4 font-sans">
           <div className="flex items-center gap-2 hidden md:flex">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
             <span className="text-xs text-slate-400 uppercase tracking-widest font-sans">Live Feed • 60 FPS</span>
           </div>
-          
-          <button
-            onClick={() => setShowSetupModal(true)}
-            className="px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs sm:text-sm font-semibold rounded-md shadow transition-all flex items-center gap-1.5 sm:gap-2 font-sans cursor-pointer"
-          >
-            <Settings className="w-4 h-4 text-sky-400" />
-            <span>SESSION SETUP</span>
-          </button>
-
-          {keycloakEnabled && (
-            <button
-              onClick={() => keycloak!.logout()}
-              title={keycloak?.tokenParsed?.preferred_username ? `Sign out (${keycloak.tokenParsed.preferred_username})` : 'Sign out'}
-              className="p-1.5 sm:p-2 bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-md shadow transition-all cursor-pointer"
-            >
-              <LogOut className="w-4 h-4 text-sky-400" />
-            </button>
-          )}
-
-          <div className="relative">
-            <button 
-              onClick={() => setShowExportDropdown(!showExportDropdown)}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs sm:text-sm font-semibold rounded-md shadow-lg transition-all flex items-center gap-1.5 sm:gap-2 font-sans"
-            >
-              <Download className="w-4 h-4 text-white" /> <span>EXPORT <span className="hidden sm:inline">ANALYSIS</span></span>
-            </button>
-
-            {showExportDropdown && (
-              <>
-                {/* Backdrop to dismiss on click outside */}
-                <div 
-                  className="fixed inset-0 z-40 bg-black/5" 
-                  onClick={() => setShowExportDropdown(false)} 
-                />
-                
-                {/* Dropdown Menu */}
-                <div className="absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-                  <div className="px-3.5 py-1.5 border-b border-slate-800/80">
-                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Select Format</p>
-                  </div>
-                  
-                  <button
-                    onClick={() => {
-                      handleExportSession();
-                      setShowExportDropdown(false);
-                    }}
-                    className="w-full text-left px-4 py-3 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-3 border-b border-slate-800/30"
-                  >
-                    <Download className="w-4 h-4 text-sky-400 shrink-0" />
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-slate-200">Export Session (JSON)</span>
-                      <span className="text-[10px] text-slate-400 mt-0.5">Includes full kinematics & config</span>
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      handleExportCSV();
-                      setShowExportDropdown(false);
-                    }}
-                    className="w-full text-left px-4 py-3 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-3"
-                  >
-                    <Download className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-slate-200">Export Pitch Log (CSV)</span>
-                      <span className="text-[10px] text-slate-400 mt-0.5">Pitches spreadsheet for Excel/Sheets</span>
-                    </div>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
         </div>
       </nav>
 
-      {/* Mode Selector Sub-Header */}
-      <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex justify-center shrink-0 z-20">
-        <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
-          <button
-            onClick={() => {
-              setAppMode('mechanics');
-              setActiveMobileTab('feed');
-            }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
-              appMode === 'mechanics'
-                ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/20 font-extrabold'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-            }`}
-          >
-            <Activity className="w-4 h-4" />
-            <span>Mechanics Tracker</span>
-          </button>
-          <button
-            onClick={() => {
-              setAppMode('pitching');
-              setActiveMobileTab('feed');
-            }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
-              appMode === 'pitching'
-                ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20 font-extrabold'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-            }`}
-          >
-            <Target className="w-4 h-4" />
-            <span>Pitch Tracker</span>
-          </button>
-        </div>
+      {/* Mode Selector - small screens only, doesn't fit in the top bar */}
+      <div className="sm:hidden bg-slate-900 border-b border-slate-800 px-4 py-2 flex justify-center shrink-0 z-20">
+        {modeSelector}
       </div>
 
       <div className="flex flex-1 overflow-hidden flex-col lg:flex-row relative">
@@ -275,60 +210,88 @@ export default function App() {
                  setCameraView={setCameraView}
                  appMode={appMode}
                  visibleMarkers={visibleMarkers}
+                 onOpenSessionSetup={() => setShowSetupModal(true)}
+                 onExportSession={handleExportSession}
+                 onExportCSV={handleExportCSV}
                />
             </div>
           </div>
 
-          {/* Bottom Analysis and Metrics Section */}
+          {/* Bottom Analysis and Metrics Section - collapsed by default, opened from the thin bar below */}
           {appMode === 'mechanics' && (
-            <div className="hidden lg:block bg-slate-900 border-t border-slate-800 p-4 shrink-0 overflow-y-auto max-h-[350px]">
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                
-                {/* Joint Angles / Metrics Cards */}
-                <div className="xl:col-span-1 flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Live Joint Metrics</span>
-                    <span className="text-[9px] text-sky-400 font-mono">Real-time Angles</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 flex-1">
-                    <div className="bg-slate-950/50 rounded-lg p-3 border border-slate-800 flex flex-col justify-between">
-                      <p className="text-[10px] text-slate-500 uppercase font-bold">Throwing Arm</p>
-                      <p className="text-2xl font-mono text-white my-1">{metrics.rightArmAngle ? `${metrics.rightArmAngle}°` : '--'}</p>
-                      <span className="text-[9px] text-slate-500">Elbow Flexion</span>
-                    </div>
-                    <div className="bg-slate-950/50 rounded-lg p-3 border border-slate-800 flex flex-col justify-between">
-                      <p className="text-[10px] text-slate-500 uppercase font-bold">Lead Leg</p>
-                      <p className="text-2xl font-mono text-white my-1">{metrics.leftLegAngle ? `${metrics.leftLegAngle}°` : '--'}</p>
-                      <span className="text-[9px] text-slate-500">Knee Flexion</span>
-                    </div>
-                    <div className="bg-slate-950/50 rounded-lg p-3 border border-slate-800 flex flex-col justify-between col-span-2">
-                      <div className="flex justify-between items-center">
-                        <p className="text-[10px] text-slate-500 uppercase font-bold">Hip/Shoulder Separation</p>
-                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${metrics.hipShoulderSeparation > 40 ? 'text-sky-400 border-sky-400/30 bg-sky-950/30' : 'text-slate-400 border-slate-700/50 bg-slate-800/30'}`}>
-                          {metrics.hipShoulderSeparation > 40 ? 'High Torque' : 'Building'}
-                        </span>
+            <div className="hidden lg:flex flex-col bg-slate-900 border-t border-slate-800 shrink-0">
+              <button
+                onClick={() => setShowMetricsPanel(v => !v)}
+                className="h-9 px-4 flex items-center justify-between text-slate-400 hover:text-slate-200 transition-colors shrink-0 cursor-pointer"
+              >
+                <span className="text-[10px] uppercase font-bold tracking-widest flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5 text-sky-400" />
+                  Live Metrics &amp; Kinematic Sequence
+                </span>
+                {showMetricsPanel ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+              </button>
+
+              <AnimatePresence initial={false}>
+                {showMetricsPanel && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="p-4 pt-0 overflow-y-auto max-h-[350px]">
+                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+
+                        {/* Joint Angles / Metrics Cards */}
+                        <div className="xl:col-span-1 flex flex-col gap-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Live Joint Metrics</span>
+                            <span className="text-[9px] text-sky-400 font-mono">Real-time Angles</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 flex-1">
+                            <div className="bg-slate-950/50 rounded-lg p-3 border border-slate-800 flex flex-col justify-between">
+                              <p className="text-[10px] text-slate-500 uppercase font-bold">Throwing Arm</p>
+                              <p className="text-2xl font-mono text-white my-1">{metrics.rightArmAngle ? `${metrics.rightArmAngle}°` : '--'}</p>
+                              <span className="text-[9px] text-slate-500">Elbow Flexion</span>
+                            </div>
+                            <div className="bg-slate-950/50 rounded-lg p-3 border border-slate-800 flex flex-col justify-between">
+                              <p className="text-[10px] text-slate-500 uppercase font-bold">Lead Leg</p>
+                              <p className="text-2xl font-mono text-white my-1">{metrics.leftLegAngle ? `${metrics.leftLegAngle}°` : '--'}</p>
+                              <span className="text-[9px] text-slate-500">Knee Flexion</span>
+                            </div>
+                            <div className="bg-slate-950/50 rounded-lg p-3 border border-slate-800 flex flex-col justify-between col-span-2">
+                              <div className="flex justify-between items-center">
+                                <p className="text-[10px] text-slate-500 uppercase font-bold">Hip/Shoulder Separation</p>
+                                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${metrics.hipShoulderSeparation > 40 ? 'text-sky-400 border-sky-400/30 bg-sky-950/30' : 'text-slate-400 border-slate-700/50 bg-slate-800/30'}`}>
+                                  {metrics.hipShoulderSeparation > 40 ? 'High Torque' : 'Building'}
+                                </span>
+                              </div>
+                              <p className="text-3xl font-mono text-white my-1.5">{metrics.hipShoulderSeparation ? `${metrics.hipShoulderSeparation}°` : '--'}</p>
+                              <span className="text-[9px] text-slate-500">Separation Angle Delta</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Kinematic Sequencing Chart */}
+                        <div className="xl:col-span-2">
+                          <KinematicChart
+                            pitchNumber={selectedPitch?.number || null}
+                            pitchType={selectedPitch?.type || null}
+                            velocity={selectedPitch?.velocity || null}
+                            kinematicsData={
+                              selectedPitch?.kinematicsData && selectedPitch.kinematicsData.length > 0
+                                ? selectedPitch.kinematicsData
+                                : liveKinematicsData
+                            }
+                          />
+                        </div>
+
                       </div>
-                      <p className="text-3xl font-mono text-white my-1.5">{metrics.hipShoulderSeparation ? `${metrics.hipShoulderSeparation}°` : '--'}</p>
-                      <span className="text-[9px] text-slate-500">Separation Angle Delta</span>
                     </div>
-                  </div>
-                </div>
-
-                {/* Kinematic Sequencing Chart */}
-                <div className="xl:col-span-2">
-                  <KinematicChart
-                    pitchNumber={selectedPitch?.number || null}
-                    pitchType={selectedPitch?.type || null}
-                    velocity={selectedPitch?.velocity || null}
-                    kinematicsData={
-                      selectedPitch?.kinematicsData && selectedPitch.kinematicsData.length > 0
-                        ? selectedPitch.kinematicsData
-                        : liveKinematicsData
-                    }
-                  />
-                </div>
-
-              </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           )}
         </main>
