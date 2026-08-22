@@ -7,6 +7,8 @@ import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, 
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
 
+const FEET_PER_METER = 3.28084;
+
 export default function App() {
   const [showSetupModal, setShowSetupModal] = useState(false);
   const [activeModalTab, setActiveModalTab] = useState<'profile' | 'camera' | 'overlays' | 'calibration' | 'guide'>('profile');
@@ -18,8 +20,11 @@ export default function App() {
 
   // Distance calibration & measurement: click-drag two points across a known
   // real-world distance to establish a pixels-per-foot scale, then use that
-  // scale to measure any other on-screen distance.
-  const [referenceDistanceFeet, setReferenceDistanceFeet] = useState(60.5); // mound-to-plate default
+  // scale to measure any other on-screen distance. pixelsPerFoot and
+  // lastMeasuredFeet are always stored in feet as the canonical unit;
+  // calibrationUnit only controls how values are entered/displayed.
+  const [calibrationUnit, setCalibrationUnit] = useState<'ft' | 'm'>('ft');
+  const [referenceDistanceValue, setReferenceDistanceValue] = useState(60.5); // mound-to-plate default, in calibrationUnit
   const [pixelsPerFoot, setPixelsPerFoot] = useState<number | null>(null);
   const [measureMode, setMeasureMode] = useState<'none' | 'calibrate' | 'measure'>('none');
   const [lastMeasuredFeet, setLastMeasuredFeet] = useState<number | null>(null);
@@ -281,9 +286,11 @@ export default function App() {
                  onMeasureModeChange={setMeasureMode}
                  pixelsPerFoot={pixelsPerFoot}
                  onCalibrationPixelDistance={(pixelDistance) => {
+                   const referenceDistanceFeet = calibrationUnit === 'ft' ? referenceDistanceValue : referenceDistanceValue * FEET_PER_METER;
                    setPixelsPerFoot(pixelDistance / referenceDistanceFeet);
                  }}
                  onMeasurementComplete={setLastMeasuredFeet}
+                 measurementUnit={calibrationUnit}
                />
             </div>
           </div>
@@ -703,20 +710,52 @@ export default function App() {
                 {activeModalTab === 'calibration' && (
                   <div className="space-y-4">
                     <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
-                      <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-1">Distance Calibration</h4>
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Distance Calibration</h4>
+                        <div className="flex items-center bg-slate-800/80 rounded-lg border border-slate-700/60 p-0.5">
+                          <button
+                            onClick={() => {
+                              if (calibrationUnit !== 'ft') {
+                                setReferenceDistanceValue(v => Math.round(v * FEET_PER_METER * 100) / 100);
+                                setCalibrationUnit('ft');
+                              }
+                            }}
+                            className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-colors cursor-pointer ${
+                              calibrationUnit === 'ft' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            US (ft)
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (calibrationUnit !== 'm') {
+                                setReferenceDistanceValue(v => Math.round(v / FEET_PER_METER * 100) / 100);
+                                setCalibrationUnit('m');
+                              }
+                            }}
+                            className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-colors cursor-pointer ${
+                              calibrationUnit === 'm' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            Metric (m)
+                          </button>
+                        </div>
+                      </div>
                       <p className="text-[11px] text-slate-400 mb-4">
-                        Set a known real-world distance (e.g. the 60'6" mound-to-plate distance, or a marked
-                        stride line), then draw over that same distance on the video to establish a
-                        pixels-per-foot scale for measuring anything else on screen.
+                        Set a known real-world distance (e.g. the 60'6" / 18.44m mound-to-plate distance, or a
+                        marked stride line), then draw over that same distance on the video to establish a
+                        pixel scale for measuring anything else on screen.
                       </p>
 
                       <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60 mb-3">
-                        <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">Reference Distance (feet)</label>
+                        <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">
+                          Reference Distance ({calibrationUnit === 'ft' ? 'feet' : 'meters'})
+                        </label>
                         <input
                           type="number"
                           step="0.1"
-                          value={referenceDistanceFeet}
-                          onChange={(e) => setReferenceDistanceFeet(parseFloat(e.target.value) || 0)}
+                          value={referenceDistanceValue}
+                          onChange={(e) => setReferenceDistanceValue(parseFloat(e.target.value) || 0)}
                           className="w-full bg-transparent text-white font-mono font-bold text-sm focus:outline-none"
                         />
                       </div>
@@ -728,7 +767,11 @@ export default function App() {
                       }`}>
                         <Ruler className="w-4 h-4 shrink-0" />
                         <span className="text-[11px] font-mono">
-                          {pixelsPerFoot ? `Calibrated - ${pixelsPerFoot.toFixed(1)} px/ft` : 'Not calibrated yet'}
+                          {pixelsPerFoot
+                            ? calibrationUnit === 'ft'
+                              ? `Calibrated - ${pixelsPerFoot.toFixed(1)} px/ft`
+                              : `Calibrated - ${(pixelsPerFoot * FEET_PER_METER).toFixed(1)} px/m`
+                            : 'Not calibrated yet'}
                         </span>
                       </div>
 
@@ -737,7 +780,7 @@ export default function App() {
                           setMeasureMode('calibrate');
                           setShowSetupModal(false);
                         }}
-                        disabled={referenceDistanceFeet <= 0}
+                        disabled={referenceDistanceValue <= 0}
                         className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg transition-all cursor-pointer"
                       >
                         <Ruler className="w-3.5 h-3.5" />
@@ -757,7 +800,7 @@ export default function App() {
                       <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-1">Measure a Distance</h4>
                       <p className="text-[11px] text-slate-400 mb-4">
                         Once calibrated, draw between any two points on the video to read off the real-world
-                        distance in feet - stride length, release point height, whatever you need.
+                        distance - stride length, release point height, whatever you need.
                       </p>
 
                       <button
@@ -774,7 +817,11 @@ export default function App() {
 
                       {lastMeasuredFeet !== null && (
                         <p className="text-[11px] text-slate-400 mt-3 font-mono">
-                          Last measurement: <span className="text-sky-400 font-bold">{lastMeasuredFeet.toFixed(2)} ft</span>
+                          Last measurement: <span className="text-sky-400 font-bold">
+                            {calibrationUnit === 'ft'
+                              ? `${lastMeasuredFeet.toFixed(2)} ft`
+                              : `${(lastMeasuredFeet / FEET_PER_METER).toFixed(2)} m`}
+                          </span>
                         </p>
                       )}
                     </div>

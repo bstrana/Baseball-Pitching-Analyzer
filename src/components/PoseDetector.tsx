@@ -11,6 +11,8 @@ const getDistance = (x1: number, y1: number, x2: number, y2: number) => {
   return Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
 };
 
+const FEET_PER_METER = 3.28084;
+
 export interface PoseMetrics {
   rightArmAngle: number;
   leftArmAngle: number;
@@ -72,6 +74,7 @@ interface PoseDetectorProps {
   pixelsPerFoot?: number | null;
   onCalibrationPixelDistance?: (pixelDistance: number) => void;
   onMeasurementComplete?: (feet: number) => void;
+  measurementUnit?: 'ft' | 'm';
 }
 
 export function PoseDetector({
@@ -99,7 +102,8 @@ export function PoseDetector({
   onMeasureModeChange,
   pixelsPerFoot,
   onCalibrationPixelDistance,
-  onMeasurementComplete
+  onMeasurementComplete,
+  measurementUnit = 'ft'
 }: PoseDetectorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -232,6 +236,7 @@ export function PoseDetector({
   const onMeasureModeChangeRef = useRef(onMeasureModeChange);
   const onCalibrationPixelDistanceRef = useRef(onCalibrationPixelDistance);
   const onMeasurementCompleteRef = useRef(onMeasurementComplete);
+  const measurementUnitRef = useRef(measurementUnit);
 
   useEffect(() => {
     strikeZoneConfigRef.current = strikeZoneConfig;
@@ -261,6 +266,7 @@ export function PoseDetector({
     onMeasureModeChangeRef.current = onMeasureModeChange;
     onCalibrationPixelDistanceRef.current = onCalibrationPixelDistance;
     onMeasurementCompleteRef.current = onMeasurementComplete;
+    measurementUnitRef.current = measurementUnit;
 
     // If we've got visual state changes while the video is paused or stopped,
     // request a single frame redraw to render the updates immediately.
@@ -1432,7 +1438,10 @@ export function PoseDetector({
     if (measureModeRef.current === 'calibrate') {
       label = `${pixelDistance.toFixed(0)} px`;
     } else if (pixelsPerFootRef.current) {
-      label = `${(pixelDistance / pixelsPerFootRef.current).toFixed(2)} ft`;
+      const feet = pixelDistance / pixelsPerFootRef.current;
+      label = measurementUnitRef.current === 'm'
+        ? `${(feet / FEET_PER_METER).toFixed(2)} m`
+        : `${feet.toFixed(2)} ft`;
     } else {
       label = `${pixelDistance.toFixed(0)} px (not calibrated)`;
     }
