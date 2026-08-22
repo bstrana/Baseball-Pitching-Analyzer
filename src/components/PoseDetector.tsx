@@ -45,6 +45,7 @@ interface PoseDetectorProps {
   strikeZoneConfig: StrikeZoneConfig;
   showStrikeZone: boolean;
   strikeZoneLocked?: boolean;
+  showPitchSpeeds?: boolean;
   pitches: Pitch[];
   onAddPitch: (pitch: Pitch) => void;
   selectedPitchId: string | null;
@@ -97,6 +98,7 @@ export function PoseDetector({
   strikeZoneConfig,
   showStrikeZone,
   strikeZoneLocked = false,
+  showPitchSpeeds = true,
   pitches,
   onAddPitch,
   selectedPitchId,
@@ -158,6 +160,7 @@ export function PoseDetector({
   const strikeZoneConfigRef = useRef(strikeZoneConfig);
   const showStrikeZoneRef = useRef(showStrikeZone);
   const strikeZoneLockedRef = useRef(strikeZoneLocked);
+  const showPitchSpeedsRef = useRef(showPitchSpeeds);
   const pitchesRef = useRef(pitches);
   const selectedPitchIdRef = useRef(selectedPitchId);
   const currentPitchTypeRef = useRef(currentPitchType);
@@ -263,6 +266,7 @@ export function PoseDetector({
     strikeZoneConfigRef.current = strikeZoneConfig;
     showStrikeZoneRef.current = showStrikeZone;
     strikeZoneLockedRef.current = strikeZoneLocked;
+    showPitchSpeedsRef.current = showPitchSpeeds;
     pitchesRef.current = pitches;
     selectedPitchIdRef.current = selectedPitchId;
     currentPitchTypeRef.current = currentPitchType;
@@ -1576,6 +1580,10 @@ export function PoseDetector({
       else if (pitch.type === 'Changeup') color = '#10b981';
       else if (pitch.type === 'Cutter') color = '#a855f7';
       else if (pitch.type === 'Sinker') color = '#ec4899';
+      else if (pitch.type === 'Splitter') color = '#06b6d4';
+      else if (pitch.type === 'Knuckleball') color = '#84cc16';
+      else if (pitch.type === 'Forkball') color = '#f97316';
+      else if (pitch.type === 'Screwball') color = '#6366f1';
 
       // Draw highlighted pulsing circle if selected or last pitch
       const isLastPitch = pitch.number === pitchesRef.current.length;
@@ -1604,7 +1612,21 @@ export function PoseDetector({
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(pitch.number.toString(), pX, pY);
-      
+
+      // Draw the MPH label below the ball, if enabled
+      if (showPitchSpeedsRef.current) {
+        const label = `${pitch.velocity}`;
+        const labelY = pY + 15;
+        ctx.font = 'bold 9px "JetBrains Mono", monospace';
+        const labelWidth = ctx.measureText(label).width;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(pX - labelWidth / 2 - 3, labelY - 7, labelWidth + 6, 14);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(label, pX, labelY);
+      }
+
       // Reset text alignment
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';

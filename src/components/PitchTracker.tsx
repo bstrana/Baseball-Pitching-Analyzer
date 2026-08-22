@@ -2,7 +2,10 @@ import React from 'react';
 import { Pitch, PitchType, StrikeZoneConfig, classifyPitch } from '../types';
 import { Target, Trash2, Gauge, RotateCcw, Sliders, Layers, Eye, EyeOff, Lock, Unlock } from 'lucide-react';
 
-const PITCH_TYPES: PitchType[] = ['Fastball', 'Curveball', 'Slider', 'Changeup', 'Cutter', 'Sinker'];
+const PITCH_TYPES: PitchType[] = [
+  'Fastball', 'Curveball', 'Slider', 'Changeup', 'Cutter', 'Sinker',
+  'Splitter', 'Knuckleball', 'Forkball', 'Screwball'
+];
 
 // Shared between the calibration map and the pitch log table below
 function getPitchColor(type: PitchType) {
@@ -13,6 +16,10 @@ function getPitchColor(type: PitchType) {
     case 'Changeup': return 'bg-emerald-500 text-white border-emerald-400';
     case 'Cutter': return 'bg-purple-500 text-white border-purple-400';
     case 'Sinker': return 'bg-pink-500 text-white border-pink-400';
+    case 'Splitter': return 'bg-cyan-500 text-white border-cyan-400';
+    case 'Knuckleball': return 'bg-lime-500 text-white border-lime-400';
+    case 'Forkball': return 'bg-orange-500 text-white border-orange-400';
+    case 'Screwball': return 'bg-indigo-500 text-white border-indigo-400';
     default: return 'bg-slate-500 text-white border-slate-400';
   }
 }
@@ -25,6 +32,10 @@ function getPitchHexColor(type: PitchType) {
     case 'Changeup': return '#10b981';
     case 'Cutter': return '#a855f7';
     case 'Sinker': return '#ec4899';
+    case 'Splitter': return '#06b6d4';
+    case 'Knuckleball': return '#84cc16';
+    case 'Forkball': return '#f97316';
+    case 'Screwball': return '#6366f1';
     default: return '#64748b';
   }
 }
@@ -38,6 +49,8 @@ interface PitchTrackerProps {
   setShowStrikeZone: (show: boolean) => void;
   strikeZoneLocked: boolean;
   setStrikeZoneLocked: (locked: boolean) => void;
+  showPitchSpeeds: boolean;
+  setShowPitchSpeeds: (show: boolean) => void;
   currentPitchType: PitchType;
   setCurrentPitchType: (type: PitchType) => void;
   currentPitchSpeed: number;
@@ -55,6 +68,8 @@ export function PitchTracker({
   setShowStrikeZone,
   strikeZoneLocked,
   setStrikeZoneLocked,
+  showPitchSpeeds,
+  setShowPitchSpeeds,
   currentPitchType,
   setCurrentPitchType,
   currentPitchSpeed,
@@ -112,6 +127,14 @@ export function PitchTracker({
             >
               {strikeZoneLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
               {strikeZoneLocked ? 'Zone Locked' : 'Zone Unlocked'}
+            </button>
+            <button
+              onClick={() => setShowPitchSpeeds(!showPitchSpeeds)}
+              title={showPitchSpeeds ? 'Hide MPH on plotted pitches' : 'Show MPH on plotted pitches'}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${showPitchSpeeds ? 'bg-sky-950/40 border-sky-500/50 text-sky-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
+            >
+              <Gauge className="w-3.5 h-3.5" />
+              {showPitchSpeeds ? 'Speed On' : 'Speed Off'}
             </button>
           </div>
         </div>
@@ -189,20 +212,29 @@ export function PitchTracker({
                   top: `${pitch.y * 100}%`,
                   transform: 'translate(-50%, -50%)',
                 }}
-                className={`absolute w-4 h-4 rounded-full border-2 flex items-center justify-center font-mono text-[8px] font-bold select-none transition-all cursor-pointer shadow-lg ${getPitchColor(pitch.type)} ${
-                  isHovered ? 'scale-150 ring-4 ring-sky-400/50 z-20 shadow-sky-500/30' : 'z-10'
-                }`}
-                title={`${pitch.type}, ${pitch.velocity} MPH - ${pitch.zone}`}
+                className={`absolute flex flex-col items-center select-none ${isHovered ? 'z-20' : 'z-10'}`}
               >
-                {pitch.number}
+                <div
+                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center font-mono text-[8px] font-bold transition-all cursor-pointer shadow-lg ${getPitchColor(pitch.type)} ${
+                    isHovered ? 'scale-150 ring-4 ring-sky-400/50 shadow-sky-500/30' : ''
+                  }`}
+                  title={`${pitch.type}, ${pitch.velocity} MPH - ${pitch.zone}`}
+                >
+                  {pitch.number}
+                </div>
+                {showPitchSpeeds && (
+                  <span className="mt-0.5 px-1 rounded bg-black/80 text-white text-[7px] font-mono font-bold leading-tight whitespace-nowrap pointer-events-none">
+                    {pitch.velocity}
+                  </span>
+                )}
               </div>
             );
           })}
         </div>
 
         {/* Legend */}
-        <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 mt-3 text-[10px] text-slate-400 w-full bg-slate-950/40 p-2 rounded border border-slate-800/60">
-          {PITCH_TYPES.slice(0, 6).map((type) => (
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-3 text-[10px] text-slate-400 w-full bg-slate-950/40 p-2 rounded border border-slate-800/60">
+          {PITCH_TYPES.map((type) => (
             <div key={type} className="flex items-center gap-1.5 truncate">
               <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0" style={{ backgroundColor: getPitchHexColor(type) }}></span>
               <span className="truncate">{type}</span>
@@ -365,7 +397,7 @@ export function PitchLog({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
-              {pitches.map((pitch) => {
+              {[...pitches].reverse().map((pitch) => {
                 const isHovered = selectedPitchId === pitch.id;
                 return (
                   <tr
