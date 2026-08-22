@@ -3,9 +3,8 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
-import { Activity, Crosshair, Download, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, LogOut, ChevronUp, ChevronDown } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { keycloak, keycloakEnabled } from './auth';
 
 export default function App() {
   const [showSetupModal, setShowSetupModal] = useState(false);
@@ -58,7 +57,6 @@ export default function App() {
   const [currentPitchType, setCurrentPitchType] = useState<PitchType>('Fastball');
   const [currentPitchSpeed, setCurrentPitchSpeed] = useState<number>(92);
   const [selectedPitchId, setSelectedPitchId] = useState<string | null>(null);
-  const [showExportDropdown, setShowExportDropdown] = useState(false);
 
   const handleAddPitch = (pitch: Pitch) => {
     setPitches(prev => [...prev, pitch]);
@@ -138,78 +136,6 @@ export default function App() {
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
             <span className="text-xs text-slate-400 uppercase tracking-widest font-sans">Live Feed • 60 FPS</span>
           </div>
-          
-          <button
-            onClick={() => setShowSetupModal(true)}
-            className="px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs sm:text-sm font-semibold rounded-md shadow transition-all flex items-center gap-1.5 sm:gap-2 font-sans cursor-pointer"
-          >
-            <Settings className="w-4 h-4 text-sky-400" />
-            <span>SESSION SETUP</span>
-          </button>
-
-          {keycloakEnabled && (
-            <button
-              onClick={() => keycloak!.logout()}
-              title={keycloak?.tokenParsed?.preferred_username ? `Sign out (${keycloak.tokenParsed.preferred_username})` : 'Sign out'}
-              className="p-1.5 sm:p-2 bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-md shadow transition-all cursor-pointer"
-            >
-              <LogOut className="w-4 h-4 text-sky-400" />
-            </button>
-          )}
-
-          <div className="relative">
-            <button 
-              onClick={() => setShowExportDropdown(!showExportDropdown)}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs sm:text-sm font-semibold rounded-md shadow-lg transition-all flex items-center gap-1.5 sm:gap-2 font-sans"
-            >
-              <Download className="w-4 h-4 text-white" /> <span>EXPORT <span className="hidden sm:inline">ANALYSIS</span></span>
-            </button>
-
-            {showExportDropdown && (
-              <>
-                {/* Backdrop to dismiss on click outside */}
-                <div 
-                  className="fixed inset-0 z-40 bg-black/5" 
-                  onClick={() => setShowExportDropdown(false)} 
-                />
-                
-                {/* Dropdown Menu */}
-                <div className="absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-                  <div className="px-3.5 py-1.5 border-b border-slate-800/80">
-                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Select Format</p>
-                  </div>
-                  
-                  <button
-                    onClick={() => {
-                      handleExportSession();
-                      setShowExportDropdown(false);
-                    }}
-                    className="w-full text-left px-4 py-3 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-3 border-b border-slate-800/30"
-                  >
-                    <Download className="w-4 h-4 text-sky-400 shrink-0" />
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-slate-200">Export Session (JSON)</span>
-                      <span className="text-[10px] text-slate-400 mt-0.5">Includes full kinematics & config</span>
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      handleExportCSV();
-                      setShowExportDropdown(false);
-                    }}
-                    className="w-full text-left px-4 py-3 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-3"
-                  >
-                    <Download className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-slate-200">Export Pitch Log (CSV)</span>
-                      <span className="text-[10px] text-slate-400 mt-0.5">Pitches spreadsheet for Excel/Sheets</span>
-                    </div>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
         </div>
       </nav>
 
@@ -277,6 +203,9 @@ export default function App() {
                  setCameraView={setCameraView}
                  appMode={appMode}
                  visibleMarkers={visibleMarkers}
+                 onOpenSessionSetup={() => setShowSetupModal(true)}
+                 onExportSession={handleExportSession}
+                 onExportCSV={handleExportCSV}
                />
             </div>
           </div>
