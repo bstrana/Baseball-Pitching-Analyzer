@@ -3,7 +3,7 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
 
@@ -177,6 +177,47 @@ export default function App() {
             <span className="text-xs text-slate-400 uppercase tracking-widest font-sans">Live Feed • 60 FPS</span>
           </div>
 
+          {appMode === 'mechanics' && (
+            <>
+              <button
+                onClick={() => setShowSkeleton(!showSkeleton)}
+                title="Toggle Skeleton Tracking overlay"
+                className={`p-1.5 sm:p-2 rounded-md border transition-all cursor-pointer ${
+                  showSkeleton
+                    ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                    : 'bg-slate-850 hover:bg-slate-800 border-slate-700 text-slate-200'
+                }`}
+              >
+                {showSkeleton ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={() => setShowTrajectory(!showTrajectory)}
+                title="Toggle Motion Trajectory overlay"
+                className={`p-1.5 sm:p-2 rounded-md border transition-all cursor-pointer ${
+                  showTrajectory
+                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                    : 'bg-slate-850 hover:bg-slate-800 border-slate-700 text-slate-200'
+                }`}
+              >
+                {showTrajectory ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              </button>
+            </>
+          )}
+
+          {appMode === 'pitching' && (
+            <button
+              onClick={() => setShowStrikeZone(!showStrikeZone)}
+              title="Toggle Strike Zone overlay"
+              className={`p-1.5 sm:p-2 rounded-md border transition-all cursor-pointer ${
+                showStrikeZone
+                  ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
+                  : 'bg-slate-850 hover:bg-slate-800 border-slate-700 text-slate-200'
+              }`}
+            >
+              <Target className="w-4 h-4" />
+            </button>
+          )}
+
           <div className="relative">
             <button
               onClick={() => setShowSessionMenu(v => !v)}
@@ -263,9 +304,6 @@ export default function App() {
                  setSelectedPitchId={setSelectedPitchId}
                  currentPitchType={currentPitchType}
                  currentPitchSpeed={currentPitchSpeed}
-                 setShowSkeleton={setShowSkeleton}
-                 setShowTrajectory={setShowTrajectory}
-                 setShowStrikeZone={setShowStrikeZone}
                  setCameraView={setCameraView}
                  appMode={appMode}
                  visibleMarkers={visibleMarkers}

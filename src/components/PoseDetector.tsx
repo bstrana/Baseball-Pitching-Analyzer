@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X } from 'lucide-react';
+import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical } from 'lucide-react';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, classifyPitch } from '../types';
 
 // Required to initialize the WebGL backend
@@ -57,9 +57,6 @@ interface PoseDetectorProps {
   };
   
   // Optional toggles for HUD integration
-  setShowSkeleton?: (show: boolean) => void;
-  setShowTrajectory?: (show: boolean) => void;
-  setShowStrikeZone?: (show: boolean) => void;
   setCameraView?: (view: 'side' | 'front' | 'back') => void;
   
   // App Mode and Config Changes
@@ -82,9 +79,6 @@ export function PoseDetector({
   currentPitchType,
   currentPitchSpeed,
   visibleMarkers,
-  setShowSkeleton,
-  setShowTrajectory,
-  setShowStrikeZone,
   setCameraView,
   appMode = 'mechanics',
   onConfigChange
@@ -93,6 +87,7 @@ export function PoseDetector({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [showSourceMenu, setShowSourceMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
@@ -2188,54 +2183,6 @@ export function PoseDetector({
             </div>
           </div>
 
-          {/* Top Right Quick Settings Toggles Overlay (Compact HUD Row) */}
-          <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
-            {appMode === 'mechanics' && setShowSkeleton && (
-              <button
-                onClick={() => setShowSkeleton(!showSkeleton)}
-                className={`p-2 rounded-lg border backdrop-blur-md transition-all shadow-lg flex items-center justify-center ${
-                  showSkeleton 
-                    ? 'bg-sky-500/20 border-sky-500/50 text-sky-300' 
-                    : 'bg-black/70 border-slate-700/50 text-slate-400 hover:text-white'
-                }`}
-                title="Toggle Skeleton Tracking overlay"
-              >
-                {showSkeleton ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                <span className="text-[9px] font-bold uppercase tracking-wider ml-1 hidden sm:inline">Skeleton</span>
-              </button>
-            )}
-
-            {appMode === 'mechanics' && setShowTrajectory && (
-              <button
-                onClick={() => setShowTrajectory(!showTrajectory)}
-                className={`p-2 rounded-lg border backdrop-blur-md transition-all shadow-lg flex items-center justify-center ${
-                  showTrajectory 
-                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-300' 
-                    : 'bg-black/70 border-slate-700/50 text-slate-400 hover:text-white'
-                }`}
-                title="Toggle Motion Trajectory overlay"
-              >
-                {showTrajectory ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                <span className="text-[9px] font-bold uppercase tracking-wider ml-1 hidden sm:inline">Trajectory</span>
-              </button>
-            )}
-
-            {appMode === 'pitching' && setShowStrikeZone && (
-              <button
-                onClick={() => setShowStrikeZone(!showStrikeZone)}
-                className={`p-2 rounded-lg border backdrop-blur-md transition-all shadow-lg flex items-center justify-center ${
-                  showStrikeZone
-                    ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
-                    : 'bg-black/70 border-slate-700/50 text-slate-400 hover:text-white'
-                }`}
-                title="Toggle Strike Zone overlay"
-              >
-                <Target className="w-4 h-4" />
-                <span className="text-[9px] font-bold uppercase tracking-wider ml-1 hidden sm:inline">Strike Zone</span>
-              </button>
-            )}
-          </div>
-
           {/* Bottom Floating Heads-Up Control Bar */}
           <div className="absolute bottom-20 md:bottom-4 left-2 right-2 md:left-4 md:right-4 z-20 flex flex-col lg:flex-row items-center justify-between gap-2.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 p-2.5 md:p-3 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)]">
             {/* Left: Input view alignment selector */}
@@ -2415,29 +2362,49 @@ export function PoseDetector({
                 <span>Replays ({recordings.length})</span>
               </button>
 
-              {/* Start Webcam Button */}
-              <button
-                onClick={startCamera}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider text-white shadow-lg ${
-                  feedSource === 'camera'
-                    ? 'bg-sky-600 border-sky-500 shadow-[0_0_15px_rgba(2,132,199,0.4)]'
-                    : 'bg-black/50 border-slate-800 hover:bg-black/75'
-                }`}
-                title="Start live webcam streaming"
-              >
-                <Camera className="w-3.5 h-3.5" />
-                <span>Webcam</span>
-              </button>
+              {/* Video Source Menu - Webcam / Upload */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowSourceMenu(v => !v)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider text-white shadow-lg ${
+                    showSourceMenu
+                      ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                      : 'bg-black/50 border-slate-800 hover:bg-black/75'
+                  }`}
+                  title="Video source"
+                >
+                  {feedSource === 'camera' ? <Camera className="w-3.5 h-3.5" /> : <Upload className="w-3.5 h-3.5" />}
+                  <span>Source</span>
+                  <MoreVertical className="w-3 h-3" />
+                </button>
 
-              {/* Upload video file */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/50 hover:bg-black/75 backdrop-blur-md border border-slate-800 text-white rounded-lg transition-all text-[11px] font-bold uppercase tracking-wider"
-                title="Upload custom pitching video file"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Upload</span>
-              </button>
+                {showSourceMenu && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40 bg-black/5"
+                      onClick={() => setShowSourceMenu(false)}
+                    />
+                    <div className="absolute bottom-full mb-2 right-0 w-48 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl py-1 z-50">
+                      <button
+                        onClick={() => { startCamera(); setShowSourceMenu(false); }}
+                        className={`w-full text-left px-3.5 py-2.5 text-xs transition-colors flex items-center gap-2.5 ${
+                          feedSource === 'camera' ? 'text-sky-300' : 'text-slate-200 hover:bg-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <Camera className="w-4 h-4 shrink-0" />
+                        <span className="font-semibold">Webcam</span>
+                      </button>
+                      <button
+                        onClick={() => { fileInputRef.current?.click(); setShowSourceMenu(false); }}
+                        className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
+                      >
+                        <Upload className="w-4 h-4 shrink-0" />
+                        <span className="font-semibold">Upload Video</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Snapshot image */}
               <button
