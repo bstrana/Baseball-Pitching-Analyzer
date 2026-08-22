@@ -75,6 +75,9 @@ interface PoseDetectorProps {
   onCalibrationPixelDistance?: (pixelDistance: number) => void;
   onMeasurementComplete?: (feet: number) => void;
   measurementUnit?: 'ft' | 'm';
+
+  // Digital camera zoom (1x - 3x) applied as a CSS scale on the video canvas.
+  cameraZoom?: number;
 }
 
 export function PoseDetector({
@@ -103,7 +106,8 @@ export function PoseDetector({
   pixelsPerFoot,
   onCalibrationPixelDistance,
   onMeasurementComplete,
-  measurementUnit = 'ft'
+  measurementUnit = 'ft',
+  cameraZoom = 1
 }: PoseDetectorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -2144,7 +2148,8 @@ export function PoseDetector({
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
-                className="w-full h-full object-contain cursor-crosshair bg-slate-950"
+                className="w-full h-full object-contain cursor-crosshair bg-slate-950 transition-transform duration-150"
+                style={{ transform: `scale(${cameraZoom})` }}
                 title={appMode === 'pitching' ? "Drag the strike zone or its corners to calibrate, and tap to plot pitches" : "Pitching mechanics live stream"}
               />
             </div>

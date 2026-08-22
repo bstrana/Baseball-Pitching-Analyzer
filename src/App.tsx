@@ -3,7 +3,7 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, ZoomIn } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
 
@@ -50,11 +50,15 @@ export default function App() {
     legs: true
   });
   
-  // Mobile active tab state
-  const [activeMobileTab, setActiveMobileTab] = useState<'feed' | 'pitchcast' | 'settings'>('feed');
-
   // Live Metrics / Kinematic Sequence panel - collapsed by default, opened from the thin footer bar
   const [showMetricsPanel, setShowMetricsPanel] = useState(false);
+
+  // Pitch Accuracy Tracker panel (Pitch Tracker mode) - collapsed behind a thin
+  // bar on mobile, always expanded on lg+ where it has its own sidebar column.
+  const [showPitchTracker, setShowPitchTracker] = useState(false);
+
+  // Digital camera zoom (1x - 3x), applied as a CSS scale on the video canvas
+  const [cameraZoom, setCameraZoom] = useState(1);
 
   // Session menu (Session Setup / Export / Sign out) - far right of the top bar, all screen sizes
   const [showSessionMenu, setShowSessionMenu] = useState(false);
@@ -140,10 +144,7 @@ export default function App() {
   const modeSelector = (
     <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
       <button
-        onClick={() => {
-          setAppMode('mechanics');
-          setActiveMobileTab('feed');
-        }}
+        onClick={() => setAppMode('mechanics')}
         className={`px-2 sm:px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-1 sm:gap-2 ${
           appMode === 'mechanics'
             ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/20 font-extrabold'
@@ -155,10 +156,7 @@ export default function App() {
         <span className="sm:hidden">Mech</span>
       </button>
       <button
-        onClick={() => {
-          setAppMode('pitching');
-          setActiveMobileTab('feed');
-        }}
+        onClick={() => setAppMode('pitching')}
         className={`px-2 sm:px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-1 sm:gap-2 ${
           appMode === 'pitching'
             ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20 font-extrabold'
@@ -175,7 +173,10 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
       {/* Top Navigation Bar */}
-      <nav className="h-16 flex items-center justify-between px-4 sm:px-6 bg-slate-900 border-b border-slate-800 shrink-0 z-20">
+      {/* z-50 keeps the top bar - and its session menu dropdown - painting above every
+          canvas overlay (drawing tools, hint banners, camera controls) below it, all of
+          which top out at z-40. */}
+      <nav className="h-16 flex items-center justify-between px-4 sm:px-6 bg-slate-900 border-b border-slate-800 shrink-0 z-50">
         <div className="flex items-center gap-3 sm:gap-4">
           <div className="w-8 h-8 bg-sky-500 rounded flex items-center justify-center">
             <Crosshair className="w-5 h-5 text-white" />
@@ -252,7 +253,7 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden flex-col lg:flex-row relative">
         
         {/* Main Content: Video Feed & Metrics */}
-        <main className={`flex-1 flex flex-col bg-slate-950 overflow-hidden pb-20 lg:pb-0 ${appMode === 'mechanics' || activeMobileTab === 'feed' ? 'flex h-full' : 'hidden lg:flex'}`}>
+        <main className="flex-1 flex flex-col bg-slate-950 overflow-hidden h-full">
           
           {/* Video Feed Area */}
           <div className="flex-1 relative bg-black flex items-center justify-center p-0 lg:p-4 min-h-0">
@@ -288,6 +289,7 @@ export default function App() {
                  }}
                  onMeasurementComplete={setLastMeasuredFeet}
                  measurementUnit={calibrationUnit}
+                 cameraZoom={cameraZoom}
                />
             </div>
           </div>
@@ -371,72 +373,52 @@ export default function App() {
           )}
         </main>
 
-        {/* Right Sidebar: Pitch Tracking Accuracy Panel */}
-        <aside className={`w-full lg:w-80 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col shrink-0 overflow-hidden h-full pb-20 lg:pb-0 ${
-          appMode === 'pitching' 
-            ? (activeMobileTab === 'pitchcast' ? 'flex flex-1' : 'hidden lg:flex') 
-            : 'hidden'
+        {/* Right Sidebar: Pitch Tracking Accuracy Panel - collapsed behind a thin
+            bar on mobile (matching the Live Metrics panel pattern), always expanded
+            in its own column on lg+ */}
+        <aside className={`w-full lg:w-80 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex-col shrink-0 overflow-hidden h-auto lg:h-full ${
+          appMode === 'pitching' ? 'flex' : 'hidden'
         }`}>
-          <div className="p-4 border-b border-slate-800 shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></span>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">PITCH ACCURACY TRACKER</p>
+          <button
+            onClick={() => setShowPitchTracker(v => !v)}
+            className="lg:hidden h-9 px-4 flex items-center justify-between text-slate-400 hover:text-slate-200 transition-colors shrink-0 cursor-pointer border-b border-slate-800"
+          >
+            <span className="text-[10px] uppercase font-bold tracking-widest flex items-center gap-2">
+              <Target className="w-3.5 h-3.5 text-rose-400" />
+              Pitch Accuracy Tracker
+            </span>
+            {showPitchTracker ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+          </button>
+
+          <div className={`${showPitchTracker ? 'flex' : 'hidden'} lg:flex flex-col flex-1 min-h-0 overflow-hidden`}>
+            <div className="p-4 border-b border-slate-800 shrink-0 hidden lg:block">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></span>
+                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">PITCH ACCURACY TRACKER</p>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">Track location, speed, and zone accuracy</p>
             </div>
-            <p className="text-xs text-slate-400 mt-1">Track location, speed, and zone accuracy</p>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 min-h-0">
-            <PitchTracker
-              pitches={pitches}
-              onAddPitch={handleAddPitch}
-              onRemovePitch={handleRemovePitch}
-              onClearPitches={handleClearPitches}
-              config={strikeZoneConfig}
-              onConfigChange={setStrikeZoneConfig}
-              showStrikeZone={showStrikeZone}
-              setShowStrikeZone={setShowStrikeZone}
-              currentPitchType={currentPitchType}
-              setCurrentPitchType={setCurrentPitchType}
-              currentPitchSpeed={currentPitchSpeed}
-              setCurrentPitchSpeed={setCurrentPitchSpeed}
-              selectedPitchId={selectedPitchId}
-              setSelectedPitchId={setSelectedPitchId}
-            />
+            <div className="flex-1 overflow-y-auto p-4 min-h-0 max-h-[420px] lg:max-h-none">
+              <PitchTracker
+                pitches={pitches}
+                onAddPitch={handleAddPitch}
+                onRemovePitch={handleRemovePitch}
+                onClearPitches={handleClearPitches}
+                config={strikeZoneConfig}
+                onConfigChange={setStrikeZoneConfig}
+                showStrikeZone={showStrikeZone}
+                setShowStrikeZone={setShowStrikeZone}
+                currentPitchType={currentPitchType}
+                setCurrentPitchType={setCurrentPitchType}
+                currentPitchSpeed={currentPitchSpeed}
+                setCurrentPitchSpeed={setCurrentPitchSpeed}
+                selectedPitchId={selectedPitchId}
+                setSelectedPitchId={setSelectedPitchId}
+              />
+            </div>
           </div>
         </aside>
 
-      </div>
-
-      {/* Mobile Bottom Tab Navigation */}
-      <div className="lg:hidden h-16 bg-slate-900 border-t border-slate-800/80 flex items-center justify-around shrink-0 z-30 px-2 absolute bottom-0 left-0 right-0 font-sans">
-        <button
-          onClick={() => setActiveMobileTab('feed')}
-          className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all ${
-            activeMobileTab === 'feed' ? 'text-sky-400 scale-105 font-bold' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Video className="w-5 h-5" />
-          <span className="text-[9px] uppercase tracking-wider font-semibold">Live Feed</span>
-        </button>
-
-        {appMode === 'pitching' && (
-          <button
-            onClick={() => setActiveMobileTab('pitchcast')}
-            className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all ${
-              activeMobileTab === 'pitchcast' ? 'text-sky-400 scale-105 font-bold' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Target className="w-5 h-5" />
-            <span className="text-[9px] uppercase tracking-wider font-semibold">Pitchcast</span>
-          </button>
-        )}
-
-        <button
-          onClick={() => setShowSetupModal(true)}
-          className="flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all text-slate-400 hover:text-slate-200"
-        >
-          <Settings className="w-5 h-5" />
-          <span className="text-[9px] uppercase tracking-wider font-semibold">Settings</span>
-        </button>
       </div>
 
       {/* Setup & Configuration Modal */}
@@ -610,6 +592,40 @@ export default function App() {
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Camera Zoom</h4>
+                        <span className="text-[11px] font-mono text-sky-400 font-bold">{cameraZoom.toFixed(1)}x</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mb-4">Digitally zoom the video canvas to frame the pitcher tighter - the skeleton and every overlay zoom with it.</p>
+
+                      <div className="flex items-center gap-3">
+                        <ZoomIn className="w-4 h-4 text-slate-500 shrink-0" />
+                        <input
+                          type="range"
+                          min="1"
+                          max="3"
+                          step="0.1"
+                          value={cameraZoom}
+                          onChange={(e) => setCameraZoom(parseFloat(e.target.value))}
+                          className="w-full accent-sky-500 cursor-pointer"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between mt-2 text-[9px] text-slate-500 font-mono uppercase">
+                        <span>1x</span>
+                        <span>2x</span>
+                        <span>3x</span>
+                      </div>
+                      {cameraZoom !== 1 && (
+                        <button
+                          onClick={() => setCameraZoom(1)}
+                          className="w-full mt-3 px-3 py-1.5 text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-wider transition-colors cursor-pointer"
+                        >
+                          Reset zoom
+                        </button>
+                      )}
                     </div>
 
                     <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
