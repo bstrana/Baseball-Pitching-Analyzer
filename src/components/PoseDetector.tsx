@@ -44,6 +44,7 @@ interface PoseDetectorProps {
   cameraView: 'side' | 'front' | 'back';
   strikeZoneConfig: StrikeZoneConfig;
   showStrikeZone: boolean;
+  strikeZoneLocked?: boolean;
   pitches: Pitch[];
   onAddPitch: (pitch: Pitch) => void;
   selectedPitchId: string | null;
@@ -92,6 +93,7 @@ export function PoseDetector({
   cameraView,
   strikeZoneConfig,
   showStrikeZone,
+  strikeZoneLocked = false,
   pitches,
   onAddPitch,
   selectedPitchId,
@@ -150,6 +152,7 @@ export function PoseDetector({
   // Dynamic references to avoid stale closures in the high-frequency animation loop
   const strikeZoneConfigRef = useRef(strikeZoneConfig);
   const showStrikeZoneRef = useRef(showStrikeZone);
+  const strikeZoneLockedRef = useRef(strikeZoneLocked);
   const pitchesRef = useRef(pitches);
   const selectedPitchIdRef = useRef(selectedPitchId);
   const currentPitchTypeRef = useRef(currentPitchType);
@@ -254,6 +257,7 @@ export function PoseDetector({
   useEffect(() => {
     strikeZoneConfigRef.current = strikeZoneConfig;
     showStrikeZoneRef.current = showStrikeZone;
+    strikeZoneLockedRef.current = strikeZoneLocked;
     pitchesRef.current = pitches;
     selectedPitchIdRef.current = selectedPitchId;
     currentPitchTypeRef.current = currentPitchType;
@@ -1678,10 +1682,13 @@ export function PoseDetector({
       return;
     }
 
-    if (appModeRef.current !== 'pitching' || !showStrikeZoneRef.current) return;
+    // Locked zones can't be dragged/resized - skip hit-testing entirely so
+    // every press falls through to the pitch-logging block in handleEnd,
+    // exactly like a press outside the zone already does.
+    if (appModeRef.current !== 'pitching' || !showStrikeZoneRef.current || strikeZoneLockedRef.current) return;
     const layout = getCanvasLayout();
     if (!layout) return;
-    
+
     // Normalized coordinates for updating config (0 to 1)
     const clickX = clientX - layout.rect.left;
     const clickY = clientY - layout.rect.top;
@@ -1776,21 +1783,24 @@ export function PoseDetector({
     const px = Math.max(0, Math.min(1, (clickX - layout.offsetX) / layout.drawnWidth));
     const py = Math.max(0, Math.min(1, (clickY - layout.offsetY) / layout.drawnHeight));
 
-    // Change cursor style on hover
+    // Change cursor style on hover - a locked zone can't be dragged/resized,
+    // so it always shows the plain crosshair used for logging a pitch
     if (!dragStateRef.current) {
-      const x = layout.offsetX + strikeZoneConfigRef.current.x * layout.drawnWidth;
-      const y = layout.offsetY + strikeZoneConfigRef.current.y * layout.drawnHeight;
-      const w = strikeZoneConfigRef.current.width * layout.drawnWidth;
-      const h = strikeZoneConfigRef.current.height * layout.drawnHeight;
-
       let cursor = 'crosshair';
-      const threshold = 24; // CSS pixels matching handleStart
 
-      if (getDistance(clickX, clickY, x, y) < threshold) cursor = 'nwse-resize';
-      else if (getDistance(clickX, clickY, x + w, y) < threshold) cursor = 'nesw-resize';
-      else if (getDistance(clickX, clickY, x, y + h) < threshold) cursor = 'nesw-resize';
-      else if (getDistance(clickX, clickY, x + w, y + h) < threshold) cursor = 'nwse-resize';
-      else if (clickX >= x && clickX <= x + w && clickY >= y && clickY <= y + h) cursor = 'move';
+      if (!strikeZoneLockedRef.current) {
+        const x = layout.offsetX + strikeZoneConfigRef.current.x * layout.drawnWidth;
+        const y = layout.offsetY + strikeZoneConfigRef.current.y * layout.drawnHeight;
+        const w = strikeZoneConfigRef.current.width * layout.drawnWidth;
+        const h = strikeZoneConfigRef.current.height * layout.drawnHeight;
+        const threshold = 24; // CSS pixels matching handleStart
+
+        if (getDistance(clickX, clickY, x, y) < threshold) cursor = 'nwse-resize';
+        else if (getDistance(clickX, clickY, x + w, y) < threshold) cursor = 'nesw-resize';
+        else if (getDistance(clickX, clickY, x, y + h) < threshold) cursor = 'nesw-resize';
+        else if (getDistance(clickX, clickY, x + w, y + h) < threshold) cursor = 'nwse-resize';
+        else if (clickX >= x && clickX <= x + w && clickY >= y && clickY <= y + h) cursor = 'move';
+      }
 
       const canvas = canvasRef.current;
       if (canvas) {
@@ -2277,7 +2287,9 @@ export function PoseDetector({
 
             {appMode === 'pitching' && showStrikeZoneRef.current && (
               <div className="px-2.5 py-1 bg-rose-500/10 border border-rose-500/30 rounded text-[9px] text-rose-400 font-mono tracking-wide uppercase shadow shadow-rose-950/25">
-                ✦ Drag zone / corners to calibrate; Click/Tap to plot pitch
+                {strikeZoneLocked
+                  ? '✓ Zone locked – click/tap anywhere to plot pitch'
+                  : '✦ Drag zone / corners to calibrate; click/tap to plot pitch'}
               </div>
             )}
           </div>

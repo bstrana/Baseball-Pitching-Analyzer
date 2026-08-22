@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pitch, PitchType, StrikeZoneConfig, classifyPitch } from '../types';
-import { Target, Trash2, Gauge, RotateCcw, Sliders, Layers, Eye, EyeOff } from 'lucide-react';
+import { Target, Trash2, Gauge, RotateCcw, Sliders, Layers, Eye, EyeOff, Lock, Unlock } from 'lucide-react';
 
 const PITCH_TYPES: PitchType[] = ['Fastball', 'Curveball', 'Slider', 'Changeup', 'Cutter', 'Sinker'];
 
@@ -36,6 +36,8 @@ interface PitchTrackerProps {
   onConfigChange: (config: StrikeZoneConfig) => void;
   showStrikeZone: boolean;
   setShowStrikeZone: (show: boolean) => void;
+  strikeZoneLocked: boolean;
+  setStrikeZoneLocked: (locked: boolean) => void;
   currentPitchType: PitchType;
   setCurrentPitchType: (type: PitchType) => void;
   currentPitchSpeed: number;
@@ -51,6 +53,8 @@ export function PitchTracker({
   onConfigChange,
   showStrikeZone,
   setShowStrikeZone,
+  strikeZoneLocked,
+  setStrikeZoneLocked,
   currentPitchType,
   setCurrentPitchType,
   currentPitchSpeed,
@@ -86,18 +90,30 @@ export function PitchTracker({
     <div className="flex flex-col gap-5 h-full overflow-y-auto pr-1">
       {/* Pitch Type Selector */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <Target className="w-5 h-5 text-sky-400" />
             <h3 className="font-semibold text-sm text-white">PITCH CALIBRATION</h3>
           </div>
-          <button
-            onClick={() => setShowStrikeZone(!showStrikeZone)}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${showStrikeZone ? 'bg-sky-950/40 border-sky-500/50 text-sky-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
-          >
-            {showStrikeZone ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-            {showStrikeZone ? 'Zone Visible' : 'Zone Hidden'}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setShowStrikeZone(!showStrikeZone)}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${showStrikeZone ? 'bg-sky-950/40 border-sky-500/50 text-sky-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
+            >
+              {showStrikeZone ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              {showStrikeZone ? 'Zone Visible' : 'Zone Hidden'}
+            </button>
+            <button
+              onClick={() => setStrikeZoneLocked(!strikeZoneLocked)}
+              title={strikeZoneLocked
+                ? 'Zone locked - canvas clicks only plot pitches. Unlock to drag/resize the zone.'
+                : 'Zone unlocked - canvas clicks drag/resize the zone. Lock it once positioned to plot pitches instead.'}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${strikeZoneLocked ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
+            >
+              {strikeZoneLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+              {strikeZoneLocked ? 'Zone Locked' : 'Zone Unlocked'}
+            </button>
+          </div>
         </div>
 
         <div>

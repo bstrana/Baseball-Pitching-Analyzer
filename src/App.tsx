@@ -78,6 +78,8 @@ export default function App() {
     height: 0.38
   });
   const [showStrikeZone, setShowStrikeZone] = useState(true);
+  // Unlocked: canvas clicks drag/resize the zone. Locked: canvas clicks only plot pitches.
+  const [strikeZoneLocked, setStrikeZoneLocked] = useState(false);
   const [currentPitchType, setCurrentPitchType] = useState<PitchType>('Fastball');
   const [currentPitchSpeed, setCurrentPitchSpeed] = useState<number>(92);
   const [selectedPitchId, setSelectedPitchId] = useState<string | null>(null);
@@ -288,6 +290,7 @@ export default function App() {
                  strikeZoneConfig={strikeZoneConfig}
                  onConfigChange={setStrikeZoneConfig}
                  showStrikeZone={showStrikeZone}
+                 strikeZoneLocked={strikeZoneLocked}
                  pitches={pitches}
                  onAddPitch={handleAddPitch}
                  selectedPitchId={selectedPitchId}
@@ -426,6 +429,8 @@ export default function App() {
                 onConfigChange={setStrikeZoneConfig}
                 showStrikeZone={showStrikeZone}
                 setShowStrikeZone={setShowStrikeZone}
+                strikeZoneLocked={strikeZoneLocked}
+                setStrikeZoneLocked={setStrikeZoneLocked}
                 currentPitchType={currentPitchType}
                 setCurrentPitchType={setCurrentPitchType}
                 currentPitchSpeed={currentPitchSpeed}
