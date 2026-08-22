@@ -1,3 +1,19 @@
+## 1.1.4
+
+* The on-canvas camera control bar (Record/Replays/Source/Snapshot/Speed)
+  is now draggable via a grip handle - reposition it anywhere on the
+  video canvas; double-click/tap the handle to reset it.
+* Fix a bug where tapping inside the strike zone on the video canvas
+  never logged a pitch - only clicks outside the zone (balls) did.
+* Add a lock toggle for the strike zone: unlocked (default) drags/resizes
+  it as before; locked disables dragging entirely so every canvas click
+  reliably plots a pitch instead of risking an accidental recalibration.
+* Move the Pitches / Strike % / Max Velo stats from the Pitch Tracker
+  sidebar onto the video canvas as an on-screen overlay.
+* Rework the Pitch Tracker panel: Interactive PitchCast now sits directly
+  under Select Pitch Type, and the Session Pitch Log moves to its own
+  left-side column on larger screens.
+
 ## 1.1.3
 
 * Drop the fixed mobile bottom tab bar - Settings already lives in the top
