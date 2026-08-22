@@ -1,3 +1,20 @@
+## 1.2.1
+
+* Pitch Tracker polish: the Telestrator drawing tool is now mechanics-mode
+  only, the Session Pitch Log lists newest pitch first with abbreviated
+  pitch types (FB, CH, ...), a Speed on/off toggle and per-pitch-type
+  count/strike%/max-velo breakdown join the existing totals, 4 more pitch
+  types (Splitter, Knuckleball, Forkball, Screwball), the strike zone's
+  corner handles hide once it's locked, and the left/right sidebars are
+  now manually resizable.
+* Player Roster entries show a combined mechanics + pitch session count,
+  and the video canvas gets a top-center overlay naming the selected
+  player.
+* Removed the redundant on-canvas "Strike Zone" toggle (duplicated the
+  sidebar's "Zone Visible" toggle), and moved the "ANALYSIS ACTIVE"/"FEED
+  PAUSED" indicator from an on-canvas overlay into the top nav bar,
+  replacing the static "TENSORFLOW READY" badge.
+
 ## 1.2.0
 
 * Add a PocketBase data backend, bundled as a sidecar process (single
