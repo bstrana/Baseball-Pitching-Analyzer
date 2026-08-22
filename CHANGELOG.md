@@ -1,3 +1,18 @@
+## 1.2.0
+
+* Add a PocketBase data backend, bundled as a sidecar process (single
+  static binary alongside nginx, proxied same-origin at /pb/) - no
+  separate service to install.
+* Settings > Profile is now a player roster: add, select, and delete
+  players, with biometrics (height/weight/wingspan) recorded per player
+  instead of one shared, throwaway profile.
+* The session menu gets a "Save Mechanics/Pitch Session" action that
+  records the current session's metrics, kinematic data, or pitch log
+  against the selected player. Nothing is saved automatically - only on
+  this explicit action.
+* A session history viewer (browsing past saved sessions per player) is
+  planned as a follow-up, not included in this release.
+
 ## 1.1.5
 
 * Fix a bug where tapping the strike zone on a touchscreen logged two

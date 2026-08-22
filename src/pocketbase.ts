@@ -1,0 +1,117 @@
+import PocketBase from 'pocketbase';
+import { Pitch, KinematicFrame, StrikeZoneConfig } from './types';
+import { PoseMetrics } from './components/PoseDetector';
+
+// Reverse-proxied by nginx (see cloudron/nginx.conf) so this is always
+// same-origin - no separate URL/API key to configure, unlike Keycloak.
+export const pb = new PocketBase('/pb');
+
+export interface Player {
+  id: string;
+  name: string;
+  position: string;
+  height_in: number;
+  weight_lb: number;
+  wingspan_in: number;
+  notes: string;
+  owner_sub: string;
+  created: string;
+  updated: string;
+}
+
+export interface MechanicsSessionRecord {
+  id: string;
+  player: string;
+  camera_view: 'side' | 'front' | 'back';
+  metrics: PoseMetrics;
+  kinematics_data: KinematicFrame[];
+  notes: string;
+  recorded_at: string;
+  created: string;
+}
+
+export interface PitchSessionRecord {
+  id: string;
+  player: string;
+  strike_zone_config: StrikeZoneConfig;
+  pitches: Pitch[];
+  total_pitches: number;
+  strikes: number;
+  avg_velocity: number;
+  max_velocity: number;
+  notes: string;
+  recorded_at: string;
+  created: string;
+}
+
+export async function listPlayers(): Promise<Player[]> {
+  return pb.collection('players').getFullList<Player>({ sort: 'name' });
+}
+
+export async function createPlayer(data: {
+  name: string;
+  position?: string;
+  height_in?: number;
+  weight_lb?: number;
+  wingspan_in?: number;
+  notes?: string;
+  owner_sub?: string;
+}): Promise<Player> {
+  return pb.collection('players').create<Player>(data);
+}
+
+export async function updatePlayer(id: string, data: Partial<Omit<Player, 'id' | 'created' | 'updated'>>): Promise<Player> {
+  return pb.collection('players').update<Player>(id, data);
+}
+
+export async function deletePlayer(id: string): Promise<void> {
+  await pb.collection('players').delete(id);
+}
+
+export async function saveMechanicsSession(data: {
+  player: string;
+  camera_view: 'side' | 'front' | 'back';
+  metrics: PoseMetrics;
+  kinematics_data: KinematicFrame[];
+  notes?: string;
+}): Promise<MechanicsSessionRecord> {
+  return pb.collection('mechanics_sessions').create<MechanicsSessionRecord>({
+    ...data,
+    recorded_at: new Date().toISOString(),
+  });
+}
+
+export async function savePitchSession(data: {
+  player: string;
+  strike_zone_config: StrikeZoneConfig;
+  pitches: Pitch[];
+  notes?: string;
+}): Promise<PitchSessionRecord> {
+  const strikes = data.pitches.filter(p => p.isStrike).length;
+  const speeds = data.pitches.map(p => p.velocity);
+  const avg_velocity = speeds.length ? Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length) : 0;
+  const max_velocity = speeds.length ? Math.max(...speeds) : 0;
+
+  return pb.collection('pitch_sessions').create<PitchSessionRecord>({
+    ...data,
+    total_pitches: data.pitches.length,
+    strikes,
+    avg_velocity,
+    max_velocity,
+    recorded_at: new Date().toISOString(),
+  });
+}
+
+export async function listMechanicsSessions(playerId: string): Promise<MechanicsSessionRecord[]> {
+  return pb.collection('mechanics_sessions').getFullList<MechanicsSessionRecord>({
+    filter: pb.filter('player = {:playerId}', { playerId }),
+    sort: '-recorded_at',
+  });
+}
+
+export async function listPitchSessions(playerId: string): Promise<PitchSessionRecord[]> {
+  return pb.collection('pitch_sessions').getFullList<PitchSessionRecord>({
+    filter: pb.filter('player = {:playerId}', { playerId }),
+    sort: '-recorded_at',
+  });
+}

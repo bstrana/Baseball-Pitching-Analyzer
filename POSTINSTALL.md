@@ -17,3 +17,19 @@ message instead of the tool.
 
 Once signed in, grant camera access when your browser prompts for it (pose
 tracking runs entirely in-browser; nothing is uploaded to the server).
+
+## Data backend (PocketBase)
+
+Player rosters and saved mechanics/pitch tracker sessions are stored in a
+PocketBase instance bundled with this app - no separate install needed. Its
+data lives under this app's own storage, so it survives restarts and backups.
+
+To reach the PocketBase admin dashboard (to browse/export the raw data),
+add to `/app/data/config.env`:
+```
+PB_ADMIN_EMAIL=you@example.com
+PB_ADMIN_PASSWORD=a-strong-password
+```
+then restart the app and open this app's URL + `/pb/_/` to log in. Leave
+both blank to skip creating an admin account - the app itself doesn't need
+one to save or load data.

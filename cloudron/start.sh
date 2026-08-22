@@ -3,6 +3,9 @@ set -eu
 
 CONFIG_FILE="/app/data/config.env"
 CONFIG_JS="/app/data/env-config.js"
+PB_DATA_DIR="/app/data/pocketbase"
+PB_BIN="/app/code/pocketbase/pocketbase"
+PB_MIGRATIONS_DIR="/app/code/pocketbase/pb_migrations"
 
 if [ ! -f "$CONFIG_FILE" ]; then
   echo "==> No $CONFIG_FILE yet, creating a template"
@@ -13,12 +16,21 @@ if [ ! -f "$CONFIG_FILE" ]; then
 KEYCLOAK_URL=
 KEYCLOAK_REALM=
 KEYCLOAK_CLIENT_ID=
+
+# PocketBase admin login (bundled data backend for the player roster and
+# saved mechanics/pitch sessions). Set both to create or update the
+# PocketBase superuser account on every startup so you can reach the admin
+# dashboard at this app's URL + /pb/_/ - leave blank to skip.
+PB_ADMIN_EMAIL=
+PB_ADMIN_PASSWORD=
 EOF
 fi
 
 KEYCLOAK_URL=""
 KEYCLOAK_REALM=""
 KEYCLOAK_CLIENT_ID=""
+PB_ADMIN_EMAIL=""
+PB_ADMIN_PASSWORD=""
 # shellcheck disable=SC1090
 . "$CONFIG_FILE"
 
@@ -34,6 +46,17 @@ window.APP_CONFIG = {
   KEYCLOAK_CLIENT_ID: "$(js_escape "$KEYCLOAK_CLIENT_ID")"
 };
 EOF
+
+mkdir -p "$PB_DATA_DIR"
+
+if [ -n "$PB_ADMIN_EMAIL" ] && [ -n "$PB_ADMIN_PASSWORD" ]; then
+  echo "==> Ensuring PocketBase superuser account exists"
+  "$PB_BIN" superuser upsert "$PB_ADMIN_EMAIL" "$PB_ADMIN_PASSWORD" --dir="$PB_DATA_DIR" --migrationsDir="$PB_MIGRATIONS_DIR" \
+    || echo "==> Warning: could not create/update the PocketBase superuser account"
+fi
+
+echo "==> Starting PocketBase"
+"$PB_BIN" serve --http=127.0.0.1:8090 --dir="$PB_DATA_DIR" --migrationsDir="$PB_MIGRATIONS_DIR" &
 
 echo "==> Starting nginx"
 exec nginx -c /app/code/cloudron/nginx.conf -g "daemon off;"

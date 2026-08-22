@@ -1,22 +1,93 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker, PitchLog } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, RefreshCw } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
+import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession } from './pocketbase';
 
 const FEET_PER_METER = 3.28084;
 
 export default function App() {
   const [showSetupModal, setShowSetupModal] = useState(false);
   const [activeModalTab, setActiveModalTab] = useState<'profile' | 'camera' | 'overlays' | 'calibration' | 'guide'>('profile');
-  const [pitcherProfile, setPitcherProfile] = useState({
-    height: 74,
-    weight: 210,
-    wingspan: 75
-  });
+
+  // Player roster, backed by PocketBase - the active player is who saved
+  // mechanics/pitch sessions get attached to.
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [playersLoading, setPlayersLoading] = useState(true);
+  const [playersError, setPlayersError] = useState<string | null>(null);
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+  const [showAddPlayerForm, setShowAddPlayerForm] = useState(false);
+  const [newPlayerName, setNewPlayerName] = useState('');
+  const [savingSession, setSavingSession] = useState(false);
+  const [saveSessionMessage, setSaveSessionMessage] = useState<string | null>(null);
+
+  const selectedPlayer = players.find(p => p.id === selectedPlayerId) || null;
+
+  useEffect(() => {
+    let active = true;
+    listPlayers()
+      .then((list) => {
+        if (!active) return;
+        setPlayers(list);
+        setPlayersError(null);
+      })
+      .catch(() => {
+        if (active) setPlayersError('Could not reach the PocketBase backend. Is it running?');
+      })
+      .finally(() => {
+        if (active) setPlayersLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!saveSessionMessage) return;
+    const t = setTimeout(() => setSaveSessionMessage(null), 4000);
+    return () => clearTimeout(t);
+  }, [saveSessionMessage]);
+
+  const handleCreatePlayer = async () => {
+    const name = newPlayerName.trim();
+    if (!name) return;
+    try {
+      const owner_sub = keycloakEnabled ? keycloak?.tokenParsed?.sub : undefined;
+      const player = await createPlayer({ name, owner_sub });
+      setPlayers(prev => [...prev, player].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedPlayerId(player.id);
+      setNewPlayerName('');
+      setShowAddPlayerForm(false);
+    } catch {
+      setPlayersError('Could not create the player - is the PocketBase backend reachable?');
+    }
+  };
+
+  const handleUpdatePlayerField = (id: string, field: 'height_in' | 'weight_lb' | 'wingspan_in' | 'position', value: number | string) => {
+    setPlayers(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
+  };
+
+  const handlePersistPlayerField = async (id: string, field: 'height_in' | 'weight_lb' | 'wingspan_in' | 'position', value: number | string) => {
+    try {
+      await updatePlayer(id, { [field]: value });
+    } catch {
+      setPlayersError('Could not save that change - is the PocketBase backend reachable?');
+    }
+  };
+
+  const handleDeletePlayer = async (id: string) => {
+    const player = players.find(p => p.id === id);
+    if (!player || !window.confirm(`Delete ${player.name} and their saved session history? This cannot be undone.`)) return;
+    try {
+      await deletePlayer(id);
+      setPlayers(prev => prev.filter(p => p.id !== id));
+      if (selectedPlayerId === id) setSelectedPlayerId(null);
+    } catch {
+      setPlayersError('Could not delete that player - is the PocketBase backend reachable?');
+    }
+  };
 
   // Distance calibration & measurement: click-drag two points across a known
   // real-world distance to establish a pixels-per-foot scale, then use that
@@ -144,6 +215,41 @@ export default function App() {
     downloadAnchor.remove();
   };
 
+  const handleSaveSession = async () => {
+    if (!selectedPlayerId) {
+      setSaveSessionMessage('Select a player in Session Setup > Profile first.');
+      return;
+    }
+    setSavingSession(true);
+    setSaveSessionMessage(null);
+    try {
+      if (appMode === 'mechanics') {
+        await saveMechanicsSession({
+          player: selectedPlayerId,
+          camera_view: cameraView,
+          metrics,
+          kinematics_data: liveKinematicsData,
+        });
+        setSaveSessionMessage('Mechanics session saved.');
+      } else {
+        if (pitches.length === 0) {
+          setSaveSessionMessage('No pitches logged yet - nothing to save.');
+          return;
+        }
+        await savePitchSession({
+          player: selectedPlayerId,
+          strike_zone_config: strikeZoneConfig,
+          pitches,
+        });
+        setSaveSessionMessage('Pitch session saved.');
+      }
+    } catch {
+      setSaveSessionMessage('Could not save the session - is the PocketBase backend reachable?');
+    } finally {
+      setSavingSession(false);
+    }
+  };
+
   const selectedPitch = pitches.find(p => p.id === selectedPitchId) || pitches[pitches.length - 1];
 
   const modeSelector = (
@@ -224,6 +330,16 @@ export default function App() {
                   >
                     <Settings className="w-4 h-4 text-sky-400 shrink-0" />
                     <span className="font-semibold">Session Setup</span>
+                  </button>
+                  <button
+                    onClick={async () => { await handleSaveSession(); setShowSessionMenu(false); }}
+                    disabled={savingSession}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5 disabled:opacity-50"
+                  >
+                    <Save className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="font-semibold">
+                      {savingSession ? 'Saving...' : appMode === 'mechanics' ? 'Save Mechanics Session' : 'Save Pitch Session'}
+                    </span>
                   </button>
                   <button
                     onClick={() => { handleExportSession(); setShowSessionMenu(false); }}
@@ -560,40 +676,123 @@ export default function App() {
               <div className="flex-1 overflow-y-auto p-5 space-y-5">
                 {activeModalTab === 'profile' && (
                   <div className="space-y-4">
+                    {playersError && (
+                      <div className="bg-red-950/30 border border-red-500/30 rounded-xl p-3.5 flex items-start gap-2.5">
+                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                        <p className="text-[11px] text-red-300">{playersError}</p>
+                      </div>
+                    )}
+
                     <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
-                      <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-1">Pitcher Dimensions</h4>
-                      <p className="text-[11px] text-slate-400 mb-4">Provide accurate biometric measurements to optimize skeletal kinematic tracking ratios.</p>
-                      
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60">
-                          <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">Height (in)</label>
-                          <input 
-                            type="number" 
-                            value={pitcherProfile.height} 
-                            onChange={(e) => setPitcherProfile(prev => ({ ...prev, height: parseInt(e.target.value) || 0 }))}
-                            className="w-full bg-transparent text-white font-mono font-bold text-sm focus:outline-none" 
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                          <Users className="w-4 h-4 text-sky-400" />
+                          Player Roster
+                        </h4>
+                        <button
+                          onClick={() => setShowAddPlayerForm(v => !v)}
+                          className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Add Player
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mb-3">Saved mechanics and pitch tracker sessions are recorded against the selected player.</p>
+
+                      {showAddPlayerForm && (
+                        <div className="flex items-center gap-2 mb-3">
+                          <input
+                            type="text"
+                            autoFocus
+                            value={newPlayerName}
+                            onChange={(e) => setNewPlayerName(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleCreatePlayer(); }}
+                            placeholder="Player name"
+                            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500"
                           />
+                          <button
+                            onClick={handleCreatePlayer}
+                            disabled={!newPlayerName.trim()}
+                            className="px-3 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                          >
+                            Save
+                          </button>
                         </div>
-                        <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60">
-                          <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">Weight (lbs)</label>
-                          <input 
-                            type="number" 
-                            value={pitcherProfile.weight} 
-                            onChange={(e) => setPitcherProfile(prev => ({ ...prev, weight: parseInt(e.target.value) || 0 }))}
-                            className="w-full bg-transparent text-white font-mono font-bold text-sm focus:outline-none" 
-                          />
+                      )}
+
+                      {playersLoading ? (
+                        <p className="text-[11px] text-slate-500 py-3 text-center">Loading roster...</p>
+                      ) : players.length === 0 ? (
+                        <p className="text-[11px] text-slate-500 py-3 text-center">No players yet - add one to start tracking sessions.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {players.map((player) => (
+                            <button
+                              key={player.id}
+                              onClick={() => setSelectedPlayerId(player.id)}
+                              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-left transition-all cursor-pointer ${
+                                selectedPlayerId === player.id
+                                  ? 'bg-sky-950/40 border-sky-500/50'
+                                  : 'bg-slate-800/60 border-slate-700/60 hover:bg-slate-800'
+                              }`}
+                            >
+                              <span className={`text-sm font-semibold ${selectedPlayerId === player.id ? 'text-sky-300' : 'text-slate-200'}`}>
+                                {player.name}
+                              </span>
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => { e.stopPropagation(); handleDeletePlayer(player.id); }}
+                                className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-red-500/10 transition-colors"
+                                title="Delete player"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </span>
+                            </button>
+                          ))}
                         </div>
-                        <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60">
-                          <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">Wingspan (in)</label>
-                          <input 
-                            type="number" 
-                            value={pitcherProfile.wingspan} 
-                            onChange={(e) => setPitcherProfile(prev => ({ ...prev, wingspan: parseInt(e.target.value) || 0 }))}
-                            className="w-full bg-transparent text-white font-mono font-bold text-sm focus:outline-none" 
-                          />
+                      )}
+                    </div>
+
+                    {selectedPlayer && (
+                      <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                        <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-1">{selectedPlayer.name}'s Dimensions</h4>
+                        <p className="text-[11px] text-slate-400 mb-4">Provide accurate biometric measurements to optimize skeletal kinematic tracking ratios.</p>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60">
+                            <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">Height (in)</label>
+                            <input
+                              type="number"
+                              value={selectedPlayer.height_in || 0}
+                              onChange={(e) => handleUpdatePlayerField(selectedPlayer.id, 'height_in', parseInt(e.target.value) || 0)}
+                              onBlur={(e) => handlePersistPlayerField(selectedPlayer.id, 'height_in', parseInt(e.target.value) || 0)}
+                              className="w-full bg-transparent text-white font-mono font-bold text-sm focus:outline-none"
+                            />
+                          </div>
+                          <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60">
+                            <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">Weight (lbs)</label>
+                            <input
+                              type="number"
+                              value={selectedPlayer.weight_lb || 0}
+                              onChange={(e) => handleUpdatePlayerField(selectedPlayer.id, 'weight_lb', parseInt(e.target.value) || 0)}
+                              onBlur={(e) => handlePersistPlayerField(selectedPlayer.id, 'weight_lb', parseInt(e.target.value) || 0)}
+                              className="w-full bg-transparent text-white font-mono font-bold text-sm focus:outline-none"
+                            />
+                          </div>
+                          <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60">
+                            <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">Wingspan (in)</label>
+                            <input
+                              type="number"
+                              value={selectedPlayer.wingspan_in || 0}
+                              onChange={(e) => handleUpdatePlayerField(selectedPlayer.id, 'wingspan_in', parseInt(e.target.value) || 0)}
+                              onBlur={(e) => handlePersistPlayerField(selectedPlayer.id, 'wingspan_in', parseInt(e.target.value) || 0)}
+                              className="w-full bg-transparent text-white font-mono font-bold text-sm focus:outline-none"
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     <div className="bg-slate-950/20 p-4 rounded-xl border border-slate-800/60 flex items-start gap-3">
                       <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
@@ -899,6 +1098,21 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Save Session toast */}
+      <AnimatePresence>
+        {saveSessionMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl text-xs font-semibold text-white flex items-center gap-2"
+          >
+            <Save className="w-4 h-4 text-emerald-400 shrink-0" />
+            {saveSessionMessage}
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
