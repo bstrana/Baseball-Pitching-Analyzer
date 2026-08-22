@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical } from 'lucide-react';
+import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal } from 'lucide-react';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, classifyPitch } from '../types';
 
 // Required to initialize the WebGL backend
@@ -113,9 +113,15 @@ export function PoseDetector({
   cameraZoom = 1,
   cameraFacingMode = 'environment'
 }: PoseDetectorProps) {
+  // Pitch stats for the on-canvas overlay (Pitches / Strike % / Max Velo)
+  const pitchStrikes = pitches.filter(p => p.isStrike).length;
+  const pitchStrikePercentage = pitches.length > 0 ? Math.round((pitchStrikes / pitches.length) * 100) : 0;
+  const pitchMaxVelo = pitches.length > 0 ? Math.max(...pitches.map(p => p.velocity)) : 0;
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [showSourceMenu, setShowSourceMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1893,10 +1899,13 @@ export function PoseDetector({
     }
 
     if (dragStateRef.current) {
+      // A press that started inside/on the strike zone (so handleStart armed a
+      // drag) but never actually moved is a tap to log a pitch, not a zone
+      // move/resize - clear the drag state but keep going so it falls through
+      // to the pitch-logging block below instead of being swallowed here.
       dragStateRef.current = null;
-      // Force immediate redraw when drag ends
       singleFrameAnalyzeRequestedRef.current = true;
-      return;
+      if (!wasClick) return;
     }
 
     if (appModeRef.current === 'pitching' && wasClick) {
@@ -1948,7 +1957,7 @@ export function PoseDetector({
   const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!pressPosRef.current) return;
     const moveDist = Math.sqrt((e.clientX - pressPosRef.current.x) ** 2 + (e.clientY - pressPosRef.current.y) ** 2);
-    const wasClick = moveDist < 6 && !dragStateRef.current;
+    const wasClick = moveDist < 6;
     handleEnd(e.clientX, e.clientY, wasClick);
     pressPosRef.current = null;
   };
@@ -1970,9 +1979,86 @@ export function PoseDetector({
     if (!pressPosRef.current) return;
     const touch = e.changedTouches[0];
     const moveDist = Math.sqrt((touch.clientX - pressPosRef.current.x) ** 2 + (touch.clientY - pressPosRef.current.y) ** 2);
-    const wasClick = moveDist < 10 && !dragStateRef.current;
+    const wasClick = moveDist < 10;
     handleEnd(touch.clientX, touch.clientY, wasClick);
     pressPosRef.current = null;
+  };
+
+  // Dragging the floating camera control bar around the canvas. hudBarPosition
+  // stays null (the bar's default docked position, via CSS classes) until the
+  // user grabs the handle for the first time; from then on it's positioned
+  // with an explicit left/top clamped to the container bounds.
+  const hudBarRef = useRef<HTMLDivElement>(null);
+  const hudDragStateRef = useRef<{ startClientX: number; startClientY: number; startLeft: number; startTop: number } | null>(null);
+  const [hudBarPosition, setHudBarPosition] = useState<{ x: number; y: number } | null>(null);
+
+  const moveHudBar = (clientX: number, clientY: number) => {
+    const drag = hudDragStateRef.current;
+    const bar = hudBarRef.current;
+    const container = containerRef.current;
+    if (!drag || !bar || !container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const barRect = bar.getBoundingClientRect();
+
+    const newLeft = Math.max(0, Math.min(
+      drag.startLeft + (clientX - drag.startClientX),
+      containerRect.width - barRect.width
+    ));
+    const newTop = Math.max(0, Math.min(
+      drag.startTop + (clientY - drag.startClientY),
+      containerRect.height - barRect.height
+    ));
+
+    setHudBarPosition({ x: newLeft, y: newTop });
+  };
+
+  const startHudBarDrag = (clientX: number, clientY: number) => {
+    const bar = hudBarRef.current;
+    const container = containerRef.current;
+    if (!bar || !container) return;
+
+    const barRect = bar.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+
+    hudDragStateRef.current = {
+      startClientX: clientX,
+      startClientY: clientY,
+      startLeft: barRect.left - containerRect.left,
+      startTop: barRect.top - containerRect.top
+    };
+  };
+
+  const handleHudHandleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    startHudBarDrag(e.clientX, e.clientY);
+
+    const onMove = (ev: MouseEvent) => moveHudBar(ev.clientX, ev.clientY);
+    const onUp = () => {
+      hudDragStateRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const handleHudHandleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 0) return;
+    const touch = e.touches[0];
+    startHudBarDrag(touch.clientX, touch.clientY);
+
+    const onMove = (ev: TouchEvent) => {
+      if (ev.touches.length === 0) return;
+      moveHudBar(ev.touches[0].clientX, ev.touches[0].clientY);
+    };
+    const onEnd = () => {
+      hudDragStateRef.current = null;
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onEnd);
   };
 
   // Drag and drop video handlers
@@ -2010,7 +2096,8 @@ export function PoseDetector({
   };
 
   return (
-    <div 
+    <div
+      ref={containerRef}
       className="relative w-full h-full overflow-hidden bg-slate-950 select-none"
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
@@ -2386,7 +2473,8 @@ export function PoseDetector({
           </div>
 
           {/* Top Right Quick Settings Toggles Overlay (Compact HUD Row) */}
-          <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
+          <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-1.5">
+          <div className="flex items-center gap-1.5">
             {appMode === 'mechanics' && setShowSkeleton && (
               <button
                 onClick={() => setShowSkeleton(!showSkeleton)}
@@ -2433,8 +2521,51 @@ export function PoseDetector({
             )}
           </div>
 
-          {/* Bottom Floating Heads-Up Control Bar */}
-          <div className="absolute bottom-20 md:bottom-4 left-2 right-2 md:left-4 md:right-4 z-20 flex flex-col lg:flex-row items-center justify-between gap-2.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 p-2.5 md:p-3 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)]">
+          {/* Pitch stats overlay - Pitches / Strike % / Max Velo, on the canvas
+              instead of the sidebar so they're visible without opening the panel */}
+          {appMode === 'pitching' && pitches.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg px-1 py-1">
+              <div className="px-2 py-0.5 text-center">
+                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Pitches</p>
+                <p className="text-sm font-mono text-white font-bold leading-none mt-0.5">{pitches.length}</p>
+              </div>
+              <div className="w-px h-6 bg-slate-700/60" />
+              <div className="px-2 py-0.5 text-center">
+                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Strike %</p>
+                <p className={`text-sm font-mono font-bold leading-none mt-0.5 ${
+                  pitchStrikePercentage >= 60 ? 'text-emerald-400' : pitchStrikePercentage >= 45 ? 'text-amber-400' : 'text-slate-300'
+                }`}>
+                  {pitchStrikePercentage}%
+                </p>
+              </div>
+              <div className="w-px h-6 bg-slate-700/60" />
+              <div className="px-2 py-0.5 text-center">
+                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Max Velo</p>
+                <p className="text-sm font-mono text-sky-400 font-bold leading-none mt-0.5">{pitchMaxVelo}</p>
+              </div>
+            </div>
+          )}
+          </div>
+
+          {/* Bottom Floating Heads-Up Control Bar - draggable via the grip handle */}
+          <div
+            ref={hudBarRef}
+            style={hudBarPosition ? { left: hudBarPosition.x, top: hudBarPosition.y, right: 'auto', bottom: 'auto' } : undefined}
+            className={`absolute z-20 flex flex-col lg:flex-row items-center justify-between gap-2.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 p-2.5 md:p-3 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] ${
+              hudBarPosition ? 'max-w-[calc(100%-1rem)]' : 'bottom-20 md:bottom-4 left-2 right-2 md:left-4 md:right-4'
+            }`}
+          >
+            {/* Grip handle - drag anywhere on the canvas to reposition, double-click/tap to reset */}
+            <div
+              onMouseDown={handleHudHandleMouseDown}
+              onTouchStart={handleHudHandleTouchStart}
+              onDoubleClick={() => setHudBarPosition(null)}
+              className="absolute -top-3 left-1/2 -translate-x-1/2 w-10 h-5 flex items-center justify-center rounded-full bg-slate-800 border border-slate-700 text-slate-500 hover:text-slate-300 hover:bg-slate-750 cursor-grab active:cursor-grabbing shadow-md transition-colors"
+              title="Drag to reposition (double-click to reset)"
+            >
+              <GripHorizontal className="w-4 h-4" />
+            </div>
+
             {/* Center: Playback controls for Video Sources - camera view alignment and
                 lens switching now live in the off-canvas Settings > Camera tab */}
             {feedSource !== 'camera' && (
