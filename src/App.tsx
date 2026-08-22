@@ -3,7 +3,7 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame } from './types';
-import { Activity, Crosshair, Download, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, LogOut } from 'lucide-react';
+import { Activity, Crosshair, Download, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, LogOut, ChevronUp, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
 
@@ -39,6 +39,9 @@ export default function App() {
   
   // Mobile active tab state
   const [activeMobileTab, setActiveMobileTab] = useState<'feed' | 'pitchcast' | 'settings'>('feed');
+
+  // Live Metrics / Kinematic Sequence panel - collapsed by default, opened from the thin footer bar
+  const [showMetricsPanel, setShowMetricsPanel] = useState(false);
 
   // Active Mode: 'mechanics' or 'pitching'
   const [appMode, setAppMode] = useState<'mechanics' | 'pitching'>('mechanics');
@@ -127,7 +130,6 @@ export default function App() {
           <div className="w-8 h-8 bg-sky-500 rounded flex items-center justify-center">
             <Crosshair className="w-5 h-5 text-white" />
           </div>
-          <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white">BASE<span className="text-sky-400">MECHANICS</span> AI</h1>
           <div className="h-6 w-px bg-slate-700 mx-1 sm:mx-2 hidden sm:block"></div>
           <span className="text-[10px] sm:text-xs font-mono px-2 py-1 bg-slate-800 rounded border border-slate-700 text-sky-400 hidden sm:inline-block">TENSORFLOW READY</span>
         </div>
@@ -279,56 +281,81 @@ export default function App() {
             </div>
           </div>
 
-          {/* Bottom Analysis and Metrics Section */}
+          {/* Bottom Analysis and Metrics Section - collapsed by default, opened from the thin bar below */}
           {appMode === 'mechanics' && (
-            <div className="hidden lg:block bg-slate-900 border-t border-slate-800 p-4 shrink-0 overflow-y-auto max-h-[350px]">
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                
-                {/* Joint Angles / Metrics Cards */}
-                <div className="xl:col-span-1 flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Live Joint Metrics</span>
-                    <span className="text-[9px] text-sky-400 font-mono">Real-time Angles</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 flex-1">
-                    <div className="bg-slate-950/50 rounded-lg p-3 border border-slate-800 flex flex-col justify-between">
-                      <p className="text-[10px] text-slate-500 uppercase font-bold">Throwing Arm</p>
-                      <p className="text-2xl font-mono text-white my-1">{metrics.rightArmAngle ? `${metrics.rightArmAngle}°` : '--'}</p>
-                      <span className="text-[9px] text-slate-500">Elbow Flexion</span>
-                    </div>
-                    <div className="bg-slate-950/50 rounded-lg p-3 border border-slate-800 flex flex-col justify-between">
-                      <p className="text-[10px] text-slate-500 uppercase font-bold">Lead Leg</p>
-                      <p className="text-2xl font-mono text-white my-1">{metrics.leftLegAngle ? `${metrics.leftLegAngle}°` : '--'}</p>
-                      <span className="text-[9px] text-slate-500">Knee Flexion</span>
-                    </div>
-                    <div className="bg-slate-950/50 rounded-lg p-3 border border-slate-800 flex flex-col justify-between col-span-2">
-                      <div className="flex justify-between items-center">
-                        <p className="text-[10px] text-slate-500 uppercase font-bold">Hip/Shoulder Separation</p>
-                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${metrics.hipShoulderSeparation > 40 ? 'text-sky-400 border-sky-400/30 bg-sky-950/30' : 'text-slate-400 border-slate-700/50 bg-slate-800/30'}`}>
-                          {metrics.hipShoulderSeparation > 40 ? 'High Torque' : 'Building'}
-                        </span>
+            <div className="hidden lg:flex flex-col bg-slate-900 border-t border-slate-800 shrink-0">
+              <button
+                onClick={() => setShowMetricsPanel(v => !v)}
+                className="h-9 px-4 flex items-center justify-between text-slate-400 hover:text-slate-200 transition-colors shrink-0 cursor-pointer"
+              >
+                <span className="text-[10px] uppercase font-bold tracking-widest flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5 text-sky-400" />
+                  Live Metrics &amp; Kinematic Sequence
+                </span>
+                {showMetricsPanel ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+              </button>
+
+              <AnimatePresence initial={false}>
+                {showMetricsPanel && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="p-4 pt-0 overflow-y-auto max-h-[350px]">
+                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+
+                        {/* Joint Angles / Metrics Cards */}
+                        <div className="xl:col-span-1 flex flex-col gap-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Live Joint Metrics</span>
+                            <span className="text-[9px] text-sky-400 font-mono">Real-time Angles</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 flex-1">
+                            <div className="bg-slate-950/50 rounded-lg p-3 border border-slate-800 flex flex-col justify-between">
+                              <p className="text-[10px] text-slate-500 uppercase font-bold">Throwing Arm</p>
+                              <p className="text-2xl font-mono text-white my-1">{metrics.rightArmAngle ? `${metrics.rightArmAngle}°` : '--'}</p>
+                              <span className="text-[9px] text-slate-500">Elbow Flexion</span>
+                            </div>
+                            <div className="bg-slate-950/50 rounded-lg p-3 border border-slate-800 flex flex-col justify-between">
+                              <p className="text-[10px] text-slate-500 uppercase font-bold">Lead Leg</p>
+                              <p className="text-2xl font-mono text-white my-1">{metrics.leftLegAngle ? `${metrics.leftLegAngle}°` : '--'}</p>
+                              <span className="text-[9px] text-slate-500">Knee Flexion</span>
+                            </div>
+                            <div className="bg-slate-950/50 rounded-lg p-3 border border-slate-800 flex flex-col justify-between col-span-2">
+                              <div className="flex justify-between items-center">
+                                <p className="text-[10px] text-slate-500 uppercase font-bold">Hip/Shoulder Separation</p>
+                                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${metrics.hipShoulderSeparation > 40 ? 'text-sky-400 border-sky-400/30 bg-sky-950/30' : 'text-slate-400 border-slate-700/50 bg-slate-800/30'}`}>
+                                  {metrics.hipShoulderSeparation > 40 ? 'High Torque' : 'Building'}
+                                </span>
+                              </div>
+                              <p className="text-3xl font-mono text-white my-1.5">{metrics.hipShoulderSeparation ? `${metrics.hipShoulderSeparation}°` : '--'}</p>
+                              <span className="text-[9px] text-slate-500">Separation Angle Delta</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Kinematic Sequencing Chart */}
+                        <div className="xl:col-span-2">
+                          <KinematicChart
+                            pitchNumber={selectedPitch?.number || null}
+                            pitchType={selectedPitch?.type || null}
+                            velocity={selectedPitch?.velocity || null}
+                            kinematicsData={
+                              selectedPitch?.kinematicsData && selectedPitch.kinematicsData.length > 0
+                                ? selectedPitch.kinematicsData
+                                : liveKinematicsData
+                            }
+                          />
+                        </div>
+
                       </div>
-                      <p className="text-3xl font-mono text-white my-1.5">{metrics.hipShoulderSeparation ? `${metrics.hipShoulderSeparation}°` : '--'}</p>
-                      <span className="text-[9px] text-slate-500">Separation Angle Delta</span>
                     </div>
-                  </div>
-                </div>
-
-                {/* Kinematic Sequencing Chart */}
-                <div className="xl:col-span-2">
-                  <KinematicChart
-                    pitchNumber={selectedPitch?.number || null}
-                    pitchType={selectedPitch?.type || null}
-                    velocity={selectedPitch?.velocity || null}
-                    kinematicsData={
-                      selectedPitch?.kinematicsData && selectedPitch.kinematicsData.length > 0
-                        ? selectedPitch.kinematicsData
-                        : liveKinematicsData
-                    }
-                  />
-                </div>
-
-              </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           )}
         </main>
