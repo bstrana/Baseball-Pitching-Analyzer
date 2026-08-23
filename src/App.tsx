@@ -567,6 +567,7 @@ export default function App() {
                  selectedPitchId={selectedPitchId}
                  setSelectedPitchId={setSelectedPitchId}
                  currentPitchType={currentPitchType}
+                 setCurrentPitchType={setCurrentPitchType}
                  currentPitchSpeed={currentPitchSpeed}
                  setShowSkeleton={setShowSkeleton}
                  setShowTrajectory={setShowTrajectory}
