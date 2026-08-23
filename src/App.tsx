@@ -38,6 +38,13 @@ export default function App() {
 
   const selectedPlayer = players.find(p => p.id === selectedPlayerId) || null;
 
+  // Display name of the signed-in coach - shown on the End Session summary so
+  // it's clear whose session this is, especially now that team-mates can
+  // view (but not edit) each other's saved sessions.
+  const coachName = keycloakEnabled
+    ? (keycloak?.tokenParsed?.name || keycloak?.tokenParsed?.preferred_username)
+    : undefined;
+
   // Start/End Session lifecycle - nothing can be saved or exported until a
   // session is explicitly ended; starting one requires a player and records
   // where it happened, ending one requires a closing note and a choice of
@@ -1461,7 +1468,10 @@ export default function App() {
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-white uppercase tracking-wider">Start Session</h3>
-                    <p className="text-[10px] text-slate-400">Select a player to begin tracking</p>
+                    <p className="text-[10px] text-slate-400">
+                      Select a player to begin tracking
+                      {coachName && <span className="text-slate-500"> · Coach: {coachName}</span>}
+                    </p>
                   </div>
                 </div>
                 <button
@@ -1630,7 +1640,11 @@ export default function App() {
                     <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Duration</p>
                     <p className="text-emerald-400 font-mono font-bold">{formatDuration(sessionElapsedSeconds)}</p>
                   </div>
-                  <div className="col-span-2">
+                  <div>
+                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Coach</p>
+                    <p className="text-slate-300 truncate">{coachName || '—'}</p>
+                  </div>
+                  <div>
                     <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Location</p>
                     <p className="text-slate-300 truncate">{sessionLocation || '—'}</p>
                   </div>
