@@ -45,7 +45,7 @@ interface PitchTrackerProps {
   setPitcherHandedness: (handedness: PitcherHandedness) => void;
 }
 
-export function PitchTracker({
+function PitchTrackerBase({
   pitches,
   config,
   onConfigChange,
@@ -370,3 +370,5 @@ export function PitchLog({
     </div>
   );
 }
+
+export const PitchTracker = React.memo(PitchTrackerBase);

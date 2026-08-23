@@ -1,12 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { PoseDetector, PoseMetrics } from './components/PoseDetector';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
+import type { PoseMetrics } from './components/PoseDetector';
 import { PitchTracker, PitchLog } from './components/PitchTracker';
-import { KinematicChart } from './components/KinematicChart';
+
+// Lazy-loaded: PoseDetector pulls in @tensorflow/tfjs + pose-detection, and
+// KinematicChart pulls in recharts - both are heavy and only needed once the
+// user is actually in mechanics/pitch-tracking mode, not on initial page load.
+const PoseDetector = lazy(() =>
+  import('./components/PoseDetector').then(m => ({ default: m.PoseDetector }))
+);
+const KinematicChart = lazy(() =>
+  import('./components/KinematicChart').then(m => ({ default: m.KinematicChart }))
+);
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb, Play, StopCircle, MapPin, Clock, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
-import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession, getPlayerSessionCount } from './pocketbase';
+import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession, getPlayerSessionCount, getPlayerSessionCounts } from './pocketbase';
 import { CameraCapabilities, RESOLUTION_PRESETS, FRAME_RATE_PRESETS, listVideoInputDevices, probeCameraCapabilities } from './camera';
 
 const FEET_PER_METER = 3.28084;
@@ -23,12 +32,57 @@ export default function App() {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [showAddPlayerForm, setShowAddPlayerForm] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState('');
-  const [savingSession, setSavingSession] = useState(false);
   const [saveSessionMessage, setSaveSessionMessage] = useState<string | null>(null);
   // Combined mechanics + pitch session count per player, shown in the roster
   const [sessionCounts, setSessionCounts] = useState<Record<string, number>>({});
 
   const selectedPlayer = players.find(p => p.id === selectedPlayerId) || null;
+
+  // Start/End Session lifecycle - nothing can be saved or exported until a
+  // session is explicitly ended; starting one requires a player and records
+  // where it happened, ending one requires a closing note and a choice of
+  // where the recorded data goes.
+  const [sessionActive, setSessionActive] = useState(false);
+  const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
+  const [sessionElapsedSeconds, setSessionElapsedSeconds] = useState(0);
+  const [sessionLocation, setSessionLocation] = useState('');
+  const [sessionNote, setSessionNote] = useState('');
+  const [showStartSessionModal, setShowStartSessionModal] = useState(false);
+  const [showEndSessionModal, setShowEndSessionModal] = useState(false);
+  const [endingSession, setEndingSession] = useState(false);
+
+  useEffect(() => {
+    if (!sessionActive || sessionStartedAt === null) return;
+    const interval = setInterval(() => {
+      setSessionElapsedSeconds(Math.floor((Date.now() - sessionStartedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [sessionActive, sessionStartedAt]);
+
+  const formatDuration = (totalSeconds: number) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+  };
+
+  const handleStartSession = () => {
+    if (!selectedPlayerId) return;
+    setSessionActive(true);
+    setSessionStartedAt(Date.now());
+    setSessionElapsedSeconds(0);
+    setShowStartSessionModal(false);
+  };
+
+  const finalizeEndSession = () => {
+    setSessionActive(false);
+    setSessionStartedAt(null);
+    setSessionElapsedSeconds(0);
+    setSessionLocation('');
+    setSessionNote('');
+    setShowEndSessionModal(false);
+  };
 
   const refreshSessionCount = (playerId: string) => {
     getPlayerSessionCount(playerId)
@@ -39,10 +93,10 @@ export default function App() {
   const playerIdsKey = players.map(p => p.id).join(',');
   useEffect(() => {
     let active = true;
-    Promise.all(players.map(p => getPlayerSessionCount(p.id).then(count => [p.id, count] as const)))
-      .then((entries) => {
+    getPlayerSessionCounts(players.map(p => p.id))
+      .then((counts) => {
         if (!active) return;
-        setSessionCounts(Object.fromEntries(entries));
+        setSessionCounts(counts);
       })
       .catch(() => {});
     return () => { active = false; };
@@ -309,60 +363,36 @@ export default function App() {
     setPitches(prev => prev.map(p => p.id === id ? { ...p, badShape: !p.badShape } : p));
   };
 
-  const handleExportSession = () => {
+  // Both only reachable from the End Session modal - nothing can be saved
+  // or exported until the session is actually ended.
+  const handleEndSessionExport = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({
-      metrics,
-      cameraView,
-      pitches,
-      strikeZoneConfig,
-      exportedAt: new Date()
+      player: selectedPlayer?.name ?? null,
+      location: sessionLocation,
+      note: sessionNote,
+      mode: appMode,
+      startedAt: sessionStartedAt ? new Date(sessionStartedAt) : null,
+      endedAt: new Date(),
+      durationSeconds: sessionElapsedSeconds,
+      ...(appMode === 'mechanics'
+        ? { cameraView, metrics, kinematicsData: liveKinematicsData }
+        : { strikeZoneConfig, pitches }),
     }, null, 2));
+
+    const playerSlug = (selectedPlayer?.name || 'session').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'session';
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `pitch-session-analysis-${Date.now()}.json`);
+    downloadAnchor.setAttribute("download", `${playerSlug}-${Date.now()}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+
+    finalizeEndSession();
   };
 
-  const handleExportCSV = () => {
-    if (pitches.length === 0) {
-      alert("No pitches to export. Log some pitches first!");
-      return;
-    }
-    
-    // Headers
-    const headers = ["Pitch Number", "Pitch Type", "Velocity (MPH)", "X (0-1)", "Y (0-1)", "Call", "Zone Location", "Timestamp"];
-    
-    // Rows
-    const rows = pitches.map(pitch => [
-      pitch.number,
-      `"${pitch.type}"`,
-      pitch.velocity,
-      pitch.x.toFixed(4),
-      pitch.y.toFixed(4),
-      pitch.isStrike ? "Strike" : "Ball",
-      `"${pitch.zone.replace(/"/g, '""')}"`,
-      `"${new Date(pitch.timestamp).toISOString()}"`
-    ]);
-    
-    const csvContent = [headers.join(","), ...rows.map(row => row.join(","))].join("\n");
-    
-    const dataStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `pitch-session-pitches-${Date.now()}.csv`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
-  };
-
-  const handleSaveSession = async () => {
-    if (!selectedPlayerId) {
-      setSaveSessionMessage('Select a player in Session Setup > Profile first.');
-      return;
-    }
-    setSavingSession(true);
+  const handleEndSessionSave = async () => {
+    if (!selectedPlayerId) return;
+    setEndingSession(true);
     setSaveSessionMessage(null);
     try {
       if (appMode === 'mechanics') {
@@ -371,25 +401,27 @@ export default function App() {
           camera_view: cameraView,
           metrics,
           kinematics_data: liveKinematicsData,
+          notes: sessionNote,
+          location: sessionLocation,
+          duration_seconds: sessionElapsedSeconds,
         });
-        setSaveSessionMessage('Mechanics session saved.');
       } else {
-        if (pitches.length === 0) {
-          setSaveSessionMessage('No pitches logged yet - nothing to save.');
-          return;
-        }
         await savePitchSession({
           player: selectedPlayerId,
           strike_zone_config: strikeZoneConfig,
           pitches,
+          notes: sessionNote,
+          location: sessionLocation,
+          duration_seconds: sessionElapsedSeconds,
         });
-        setSaveSessionMessage('Pitch session saved.');
       }
       refreshSessionCount(selectedPlayerId);
+      setSaveSessionMessage('Session saved.');
+      finalizeEndSession();
     } catch {
       setSaveSessionMessage('Could not save the session - is the PocketBase backend reachable?');
     } finally {
-      setSavingSession(false);
+      setEndingSession(false);
     }
   };
 
@@ -456,6 +488,13 @@ export default function App() {
             </span>
             <span className="text-white uppercase tracking-wider">{analysisPaused ? 'Feed Paused' : 'Analysis Active'}</span>
           </span>
+
+          {sessionActive && (
+            <span className="items-center gap-1.5 text-[10px] sm:text-xs font-mono px-2 py-1 bg-emerald-950/40 rounded border border-emerald-500/40 hidden sm:flex">
+              <Clock className="w-3 h-3 text-emerald-400" />
+              <span className="text-emerald-300 font-bold tabular-nums">{formatDuration(sessionElapsedSeconds)}</span>
+            </span>
+          )}
         </div>
         {/* Mode Selector - always in the top bar, between logo and session menu */}
         <div className="flex">{modeSelector}</div>
@@ -486,36 +525,30 @@ export default function App() {
                   onClick={() => setShowSessionMenu(false)}
                 />
                 <div className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl py-1 z-50">
+                  {sessionActive ? (
+                    <button
+                      onClick={() => { setShowEndSessionModal(true); setShowSessionMenu(false); }}
+                      className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
+                    >
+                      <StopCircle className="w-4 h-4 text-red-400 shrink-0" />
+                      <span className="font-semibold">End Session</span>
+                      <span className="ml-auto text-[10px] font-mono text-emerald-400">{formatDuration(sessionElapsedSeconds)}</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { setShowStartSessionModal(true); setShowSessionMenu(false); }}
+                      className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
+                    >
+                      <Play className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span className="font-semibold">Start Session</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => { setShowSetupModal(true); setShowSessionMenu(false); }}
                     className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
                   >
                     <Settings className="w-4 h-4 text-sky-400 shrink-0" />
                     <span className="font-semibold">Session Setup</span>
-                  </button>
-                  <button
-                    onClick={async () => { await handleSaveSession(); setShowSessionMenu(false); }}
-                    disabled={savingSession}
-                    className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5 disabled:opacity-50"
-                  >
-                    <Save className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span className="font-semibold">
-                      {savingSession ? 'Saving...' : appMode === 'mechanics' ? 'Save Mechanics Session' : 'Save Pitch Session'}
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => { handleExportSession(); setShowSessionMenu(false); }}
-                    className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
-                  >
-                    <Download className="w-4 h-4 text-sky-400 shrink-0" />
-                    <span className="font-semibold">Export Session (JSON)</span>
-                  </button>
-                  <button
-                    onClick={() => { handleExportCSV(); setShowSessionMenu(false); }}
-                    className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2.5"
-                  >
-                    <Download className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span className="font-semibold">Export Pitch Log (CSV)</span>
                   </button>
                   {keycloakEnabled && (
                     <button
@@ -570,6 +603,11 @@ export default function App() {
           <div className="flex-1 relative bg-black flex items-center justify-center p-0 lg:p-4 min-h-0">
             <div className="w-full h-full relative lg:rounded-xl overflow-hidden lg:border lg:border-slate-800 lg:shadow-2xl bg-slate-950 flex items-center justify-center">
                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40 pointer-events-none z-10"></div>
+               <Suspense fallback={
+                 <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-sm">
+                   Loading analyzer...
+                 </div>
+               }>
                <PoseDetector
                  onMetricsUpdate={setMetrics}
                  onKinematicsUpdate={setLiveKinematicsData}
@@ -610,10 +648,11 @@ export default function App() {
                  uvcFrameRate={uvcFrameRate}
                  onCameraSettingsChange={setActualCameraSettings}
                  onAnalysisStatusChange={setAnalysisPaused}
-                 currentPlayerName={selectedPlayer?.name}
+                 currentPlayerName={sessionActive ? selectedPlayer?.name : undefined}
                  targetMode={targetMode}
                  pitcherHandedness={pitcherHandedness}
                />
+               </Suspense>
             </div>
           </div>
 
@@ -679,16 +718,18 @@ export default function App() {
 
                         {/* Kinematic Sequencing Chart */}
                         <div className="xl:col-span-2">
-                          <KinematicChart
-                            pitchNumber={selectedPitch?.number || null}
-                            pitchType={selectedPitch?.type || null}
-                            velocity={selectedPitch?.velocity || null}
-                            kinematicsData={
-                              selectedPitch?.kinematicsData && selectedPitch.kinematicsData.length > 0
-                                ? selectedPitch.kinematicsData
-                                : liveKinematicsData
-                            }
-                          />
+                          <Suspense fallback={<div className="text-slate-500 text-xs p-4">Loading chart...</div>}>
+                            <KinematicChart
+                              pitchNumber={selectedPitch?.number || null}
+                              pitchType={selectedPitch?.type || null}
+                              velocity={selectedPitch?.velocity || null}
+                              kinematicsData={
+                                selectedPitch?.kinematicsData && selectedPitch.kinematicsData.length > 0
+                                  ? selectedPitch.kinematicsData
+                                  : liveKinematicsData
+                              }
+                            />
+                          </Suspense>
                         </div>
 
                       </div>
@@ -1388,6 +1429,244 @@ export default function App() {
                   className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg shadow-sky-600/10 transition-all cursor-pointer font-sans"
                 >
                   Apply & Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Start Session modal */}
+      <AnimatePresence>
+        {showStartSessionModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowStartSessionModal(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.2 }}
+              className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl relative overflow-hidden z-10 font-sans"
+            >
+              <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+                    <Play className="w-4.5 h-4.5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white uppercase tracking-wider">Start Session</h3>
+                    <p className="text-[10px] text-slate-400">Select a player to begin tracking</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowStartSessionModal(false)}
+                  className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4 overflow-y-auto">
+                {playersError && (
+                  <div className="bg-red-950/30 border border-red-500/30 rounded-xl p-3.5 flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-red-300">{playersError}</p>
+                  </div>
+                )}
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-sky-400" />
+                      Player
+                    </label>
+                    <button
+                      onClick={() => setShowAddPlayerForm(v => !v)}
+                      className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add Player
+                    </button>
+                  </div>
+
+                  {showAddPlayerForm && (
+                    <div className="flex items-center gap-2 mb-3">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={newPlayerName}
+                        onChange={(e) => setNewPlayerName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleCreatePlayer(); }}
+                        placeholder="Player name"
+                        className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500"
+                      />
+                      <button
+                        onClick={handleCreatePlayer}
+                        disabled={!newPlayerName.trim()}
+                        className="px-3 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  )}
+
+                  {playersLoading ? (
+                    <p className="text-[11px] text-slate-500 py-3 text-center">Loading roster...</p>
+                  ) : players.length === 0 ? (
+                    <p className="text-[11px] text-slate-500 py-3 text-center">No players yet - add one above to start a session.</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+                      {players.map((player) => (
+                        <button
+                          key={player.id}
+                          onClick={() => setSelectedPlayerId(player.id)}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-left transition-all cursor-pointer ${
+                            selectedPlayerId === player.id
+                              ? 'bg-emerald-950/40 border-emerald-500/50'
+                              : 'bg-slate-800/60 border-slate-700/60 hover:bg-slate-800'
+                          }`}
+                        >
+                          <span className={`text-sm font-semibold truncate ${selectedPlayerId === player.id ? 'text-emerald-300' : 'text-slate-200'}`}>
+                            {player.name}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold flex items-center gap-1.5 mb-2">
+                    <MapPin className="w-3.5 h-3.5 text-sky-400" />
+                    Location
+                  </label>
+                  <input
+                    type="text"
+                    value={sessionLocation}
+                    onChange={(e) => setSessionLocation(e.target.value)}
+                    placeholder="e.g. Turf Field A, backyard bullpen"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+
+                {!selectedPlayerId && (
+                  <p className="text-[11px] text-amber-400 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    Select a player to start the session.
+                  </p>
+                )}
+              </div>
+
+              <div className="px-5 py-4 border-t border-slate-800 flex items-center justify-end gap-2.5">
+                <button
+                  onClick={() => setShowStartSessionModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleStartSession}
+                  disabled={!selectedPlayerId}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg shadow-emerald-600/10 transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  Start Session
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* End Session modal */}
+      <AnimatePresence>
+        {showEndSessionModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowEndSessionModal(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.2 }}
+              className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl relative overflow-hidden z-10 font-sans"
+            >
+              <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+                    <StopCircle className="w-4.5 h-4.5 text-red-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white uppercase tracking-wider">End Session</h3>
+                    <p className="text-[10px] text-slate-400">Add a note, then export or save</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowEndSessionModal(false)}
+                  className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4 overflow-y-auto">
+                <div className="bg-slate-950/30 border border-slate-800 rounded-xl p-3.5 grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Player</p>
+                    <p className="text-white font-semibold truncate">{selectedPlayer?.name || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Duration</p>
+                    <p className="text-emerald-400 font-mono font-bold">{formatDuration(sessionElapsedSeconds)}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Location</p>
+                    <p className="text-slate-300 truncate">{sessionLocation || '—'}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold flex items-center gap-1.5 mb-2">
+                    <FileText className="w-3.5 h-3.5 text-sky-400" />
+                    Note
+                  </label>
+                  <textarea
+                    value={sessionNote}
+                    onChange={(e) => setSessionNote(e.target.value)}
+                    placeholder="How did the session go?"
+                    rows={3}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500 resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="px-5 py-4 border-t border-slate-800 flex items-center justify-end gap-2.5">
+                <button
+                  onClick={handleEndSessionExport}
+                  disabled={endingSession}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none text-slate-200 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5 text-sky-400" />
+                  Export
+                </button>
+                <button
+                  onClick={handleEndSessionSave}
+                  disabled={endingSession}
+                  className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg shadow-sky-600/10 transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  {endingSession ? 'Saving...' : 'Save to Database'}
                 </button>
               </div>
             </motion.div>
