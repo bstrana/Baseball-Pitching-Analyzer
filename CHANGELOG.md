@@ -1,3 +1,12 @@
+## 1.2.9
+
+* Player rosters and saved sessions are now scoped to the signed-in coach.
+  Previously any signed-in user could see and edit every coach's data;
+  now PocketBase verifies each request against Keycloak and only shows a
+  coach their own players and sessions. Existing rosters carry forward
+  automatically on upgrade; a player saved without a recorded owner needs
+  reassigning by hand via the PocketBase admin dashboard.
+
 ## 1.2.8
 
 * Fixed the session menu (the three-dot icon in the top-right of the nav
