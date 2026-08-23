@@ -1,3 +1,20 @@
+## 1.2.4
+
+* Pitch Tracker mode's canvas HUD bar now shows a pitch type quick-picker
+  (abbreviation + a tap-to-select grid of all 11 types) in the slot the
+  camera zoom control used, since zoom isn't useful there. Mechanics mode
+  keeps camera zoom in that spot, unchanged.
+* Fixed the Source / Camera Zoom / Pitch Type popovers on the canvas HUD
+  rendering off-screen on mobile - they were anchored to their own
+  button rather than the viewport, so once the button row wrapped a
+  button could land near the screen edge and clip the popover off it
+  entirely. They now center in the viewport on mobile.
+* Fixed the video canvas getting clipped by the mobile browser's own UI
+  (address bar / toolbar) in landscape orientation, where it eats a much
+  larger share of the already-short viewport height than in portrait.
+  The app shell now uses the dynamic viewport height unit, which tracks
+  what's actually visible instead of the full layout viewport.
+
 ## 1.2.3
 
 * Removed the "STRIKE ZONE" text label drawn above the strike zone box on
