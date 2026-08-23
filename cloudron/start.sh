@@ -6,6 +6,7 @@ CONFIG_JS="/app/data/env-config.js"
 PB_DATA_DIR="/app/data/pocketbase"
 PB_BIN="/app/code/pocketbase/pocketbase"
 PB_MIGRATIONS_DIR="/app/code/pocketbase/pb_migrations"
+PB_HOOKS_DIR="/app/code/pocketbase/pb_hooks"
 
 if [ ! -f "$CONFIG_FILE" ]; then
   echo "==> No $CONFIG_FILE yet, creating a template"
@@ -55,8 +56,16 @@ if [ -n "$PB_ADMIN_EMAIL" ] && [ -n "$PB_ADMIN_PASSWORD" ]; then
     || echo "==> Warning: could not create/update the PocketBase superuser account"
 fi
 
+# pb_hooks/keycloak_auth.pb.js verifies each request's Keycloak token against
+# this same realm, to scope players/mechanics_sessions/pitch_sessions to the
+# coach who's signed in - it needs these as real process env vars, not just
+# the frontend's env-config.js above. Without them, every request to those
+# collections is rejected (fails closed, not open).
+export KEYCLOAK_URL
+export KEYCLOAK_REALM
+
 echo "==> Starting PocketBase"
-"$PB_BIN" serve --http=127.0.0.1:8090 --dir="$PB_DATA_DIR" --migrationsDir="$PB_MIGRATIONS_DIR" &
+"$PB_BIN" serve --http=127.0.0.1:8090 --dir="$PB_DATA_DIR" --migrationsDir="$PB_MIGRATIONS_DIR" --hooksDir="$PB_HOOKS_DIR" &
 
 echo "==> Starting nginx"
 exec nginx -c /app/code/cloudron/nginx.conf -g "daemon off;"
