@@ -300,6 +300,9 @@ export function PoseDetector({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Kept in sync with `recordings` state purely so the unmount cleanup below
+  // can revoke whatever object URLs are still outstanding at that point.
+  const recordingsRef = useRef(recordings);
 
   // Rolling kinematics data for pitch-release kinematics capturing
   const rollingKinematicsRef = useRef<{ hip: number; shoulder: number; wrist: number; timestamp: number }[]>([]);
@@ -349,6 +352,7 @@ export function PoseDetector({
     strikeZoneLockedRef.current = strikeZoneLocked;
     showPitchSpeedsRef.current = showPitchSpeeds;
     pitchesRef.current = pitches;
+    recordingsRef.current = recordings;
     selectedPitchIdRef.current = selectedPitchId;
     currentPitchTypeRef.current = currentPitchType;
     currentPitchSpeedRef.current = currentPitchSpeed;
@@ -386,6 +390,14 @@ export function PoseDetector({
     }
   });
 
+  // Recording object URLs (from URL.createObjectURL) keep their Blob alive
+  // in memory until explicitly revoked - release whatever's still in the
+  // list if this component ever unmounts with recordings outstanding.
+  useEffect(() => {
+    return () => {
+      recordingsRef.current.forEach(rec => URL.revokeObjectURL(rec.url));
+    };
+  }, []);
 
   // Initialize TensorFlow.js and the MoveNet model
   useEffect(() => {
@@ -886,6 +898,20 @@ export function PoseDetector({
     }
   };
 
+  // Downloaded recording/snapshot filenames: <player>_<date-time>.<ext> - falls
+  // back to "session" when no player is selected for the current session.
+  const buildDownloadFilename = (extension: string, timestamp: number) => {
+    const playerSlug = (currentPlayerName || 'session')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'session';
+    const d = new Date(timestamp);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+    return `${playerSlug}_${dateStr}.${extension}`;
+  };
+
   const takeSnapshot = () => {
     if (!videoRef.current || !canvasRef.current) return;
     
@@ -918,7 +944,7 @@ export function PoseDetector({
         tempCtx.fillText('BASEMECHANICS AI', 20, 40);
         
         const link = document.createElement('a');
-        link.download = `mechanics-snapshot-${Date.now()}.png`;
+        link.download = buildDownloadFilename('png', Date.now());
         link.href = tempCanvas.toDataURL('image/png');
         link.click();
       }
@@ -2562,6 +2588,7 @@ export function PoseDetector({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        URL.revokeObjectURL(rec.url);
                         setRecordings(prev => prev.filter(r => r.id !== rec.id));
                       }}
                       className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-slate-800/50 transition-colors"
@@ -2581,7 +2608,7 @@ export function PoseDetector({
                     </button>
                     <a
                       href={rec.url}
-                      download={`basemechanics-pitch-${rec.id}.webm`}
+                      download={buildDownloadFilename('webm', rec.timestamp)}
                       className="flex items-center justify-center gap-1 py-1 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded font-bold text-[10px] uppercase tracking-wider transition-colors"
                     >
                       Export
