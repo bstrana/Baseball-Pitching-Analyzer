@@ -1,3 +1,19 @@
+## 1.2.6
+
+* Replaced the Interactive PitchCast mini-map in the Pitch Tracker side
+  panel with a Velocity Trend chart (velocity per pitch, colored by
+  type, with an average line and a per-pitch tooltip) - pitch location
+  is already plotted live on the video canvas, so the map was a
+  redundant second copy of the same thing.
+* On a phone in landscape, the top nav bar and bottom panel bar (Live
+  Metrics / Pitch Accuracy Tracker) now collapse to a small chevron tab
+  on the right edge by default, since there's very little height to
+  spare there. Tap the tab to slide both back in, tap again to hide
+  them. Portrait and desktop are unaffected.
+* Added a Fullscreen toggle to the video canvas's HUD bar - most useful
+  in that same phone-landscape case, since it also hides the browser's
+  own address bar/toolbar.
+
 ## 1.2.5
 
 * Fixed the live camera feed rendering as a narrow pillarboxed strip with
