@@ -1,3 +1,14 @@
+## 1.2.10
+
+* Coaches sharing the same team (set via a Keycloak profile attribute)
+  can now view each other's players and saved sessions - editing and
+  deleting still stay restricted to the coach who created each record.
+  Requires a Keycloak protocol mapper exposing a "team" attribute; see
+  POSTINSTALL for setup.
+* The Start/End Session modals now show the signed-in coach's name, so
+  it's clear whose session it is when teammates can see each other's
+  data.
+
 ## 1.2.9
 
 * Player rosters and saved sessions are now scoped to the signed-in coach.
