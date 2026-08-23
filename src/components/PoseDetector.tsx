@@ -162,9 +162,10 @@ export function PoseDetector({
   targetMode = false,
   pitcherHandedness = 'right'
 }: PoseDetectorProps) {
-  // Pitch stats for the on-canvas overlay (Pitches / Strike % / Max Velo)
+  // Pitch stats for the on-canvas overlay (Pitches / Strike % / Avg Velo / Max Velo)
   const pitchStrikes = pitches.filter(p => p.isStrike).length;
   const pitchStrikePercentage = pitches.length > 0 ? Math.round((pitchStrikes / pitches.length) * 100) : 0;
+  const pitchAvgVelo = pitches.length > 0 ? Math.round(pitches.reduce((sum, p) => sum + p.velocity, 0) / pitches.length) : 0;
   const pitchMaxVelo = pitches.length > 0 ? Math.max(...pitches.map(p => p.velocity)) : 0;
 
   // Same breakdown, per pitch type, for the rows listed under the totals -
@@ -2984,8 +2985,9 @@ export function PoseDetector({
             )}
           </div>
 
-          {/* Pitch stats overlay - Pitches / Strike % / Max Velo, on the canvas
-              instead of the sidebar so they're visible without opening the panel */}
+          {/* Pitch stats overlay - Pitches / Strike % / Avg Velo / Max Velo, on
+              the canvas instead of the sidebar so they're visible without
+              opening the panel */}
           {appMode === 'pitching' && pitches.length > 0 && (
             <div className="flex items-center gap-1.5 bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg px-1 py-1">
               <div className="px-2 py-0.5 text-center">
@@ -3000,6 +3002,11 @@ export function PoseDetector({
                 }`}>
                   {pitchStrikePercentage}%
                 </p>
+              </div>
+              <div className="w-px h-6 bg-slate-700/60" />
+              <div className="px-2 py-0.5 text-center">
+                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Avg Velo</p>
+                <p className="text-sm font-mono text-slate-300 font-bold leading-none mt-0.5">{pitchAvgVelo}</p>
               </div>
               <div className="w-px h-6 bg-slate-700/60" />
               <div className="px-2 py-0.5 text-center">

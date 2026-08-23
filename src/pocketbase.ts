@@ -26,6 +26,8 @@ export interface MechanicsSessionRecord {
   metrics: PoseMetrics;
   kinematics_data: KinematicFrame[];
   notes: string;
+  location: string;
+  duration_seconds: number;
   recorded_at: string;
   created: string;
 }
@@ -40,6 +42,8 @@ export interface PitchSessionRecord {
   avg_velocity: number;
   max_velocity: number;
   notes: string;
+  location: string;
+  duration_seconds: number;
   recorded_at: string;
   created: string;
 }
@@ -74,6 +78,8 @@ export async function saveMechanicsSession(data: {
   metrics: PoseMetrics;
   kinematics_data: KinematicFrame[];
   notes?: string;
+  location?: string;
+  duration_seconds?: number;
 }): Promise<MechanicsSessionRecord> {
   return pb.collection('mechanics_sessions').create<MechanicsSessionRecord>({
     ...data,
@@ -86,6 +92,8 @@ export async function savePitchSession(data: {
   strike_zone_config: StrikeZoneConfig;
   pitches: Pitch[];
   notes?: string;
+  location?: string;
+  duration_seconds?: number;
 }): Promise<PitchSessionRecord> {
   const strikes = data.pitches.filter(p => p.isStrike).length;
   const speeds = data.pitches.map(p => p.velocity);
