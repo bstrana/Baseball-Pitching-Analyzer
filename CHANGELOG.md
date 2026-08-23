@@ -1,3 +1,17 @@
+## 1.2.3
+
+* Removed the "STRIKE ZONE" text label drawn above the strike zone box on
+  the video canvas - the border and grid already identify it.
+* Settings > Camera gets a "USB / UVC Camera (Slow-Mo)" section: scan for
+  connected video input devices, pick one, and choose from its reported
+  resolution/frame-rate presets (e.g. 720p @ 120fps) - useful for a
+  high-fps global-shutter module like an AR0234. The actual negotiated
+  stream settings are shown next to the pickers, since a browser's
+  constraint negotiation is best-effort. This is separate from - and
+  doesn't change - the existing mobile front/rear lens picker; phone
+  cameras still aren't supported here since browsers cap `getUserMedia`
+  well below a phone's native slow-mo capability.
+
 ## 1.2.2
 
 * Add Target Mode to the Pitch Tracker: tap the video canvas to plant a
