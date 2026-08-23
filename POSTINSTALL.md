@@ -24,6 +24,15 @@ Player rosters and saved mechanics/pitch tracker sessions are stored in a
 PocketBase instance bundled with this app - no separate install needed. Its
 data lives under this app's own storage, so it survives restarts and backups.
 
+Each coach only sees their own players and sessions - PocketBase verifies
+every request against the same Keycloak realm configured above, so
+KEYCLOAK_URL/KEYCLOAK_REALM must be set for both sign-in and data access to
+work. If you're upgrading from an older version, existing rosters are
+carried forward automatically the first time this app starts after the
+upgrade; any player saved without a recorded owner can't be matched to a
+coach automatically and needs reassigning by hand via the admin dashboard
+below.
+
 To reach the PocketBase admin dashboard (to browse/export the raw data),
 add to `/app/data/config.env`:
 ```
