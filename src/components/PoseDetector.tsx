@@ -2449,6 +2449,64 @@ export function PoseDetector({
     }
   };
 
+  // Camera Zoom control - a popover instead of the Settings modal so the live
+  // feed stays visible while dialing it in. Shared between the two HUD slots
+  // it can occupy: next to Source in mechanics mode, or in the Speed slot's
+  // place in pitching mode (which has no use for slow-mo playback speed).
+  const renderZoomControl = () => (
+    <div className="relative">
+      <button
+        onClick={() => setShowZoomMenu(v => !v)}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider text-white shadow-lg ${
+          showZoomMenu
+            ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+            : 'bg-black/50 border-slate-800 hover:bg-black/75'
+        }`}
+        title="Camera zoom"
+      >
+        <ZoomIn className="w-3.5 h-3.5" />
+        <span className="font-mono">{cameraZoom.toFixed(1)}x</span>
+      </button>
+
+      {showZoomMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/5"
+            onClick={() => setShowZoomMenu(false)}
+          />
+          <div className="absolute bottom-full mb-2 right-0 w-56 max-lg:fixed max-lg:left-1/2 max-lg:-translate-x-1/2 max-lg:right-auto max-lg:bottom-24 max-lg:mb-0 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-3.5 z-50">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Camera Zoom</span>
+              <span className="text-xs font-mono text-sky-400 font-bold">{cameraZoom.toFixed(1)}x</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="3"
+              step="0.1"
+              value={cameraZoom}
+              onChange={(e) => onCameraZoomChange?.(parseFloat(e.target.value))}
+              className="w-full accent-sky-500 cursor-pointer"
+            />
+            <div className="flex items-center justify-between mt-1.5 text-[9px] text-slate-500 font-mono uppercase">
+              <span>1x</span>
+              <span>2x</span>
+              <span>3x</span>
+            </div>
+            {cameraZoom !== 1 && (
+              <button
+                onClick={() => onCameraZoomChange?.(1)}
+                className="w-full mt-2.5 px-3 py-1.5 text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Reset zoom
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
   return (
     <div
       ref={containerRef}
@@ -2589,7 +2647,14 @@ export function PoseDetector({
         ) : (
           <div className="absolute inset-0 w-full h-full z-0 flex items-center justify-center p-2 lg:p-4 bg-black/40 overflow-auto">
             {/* Resizable wrapper: drag the bottom-right corner to resize the video canvas.
-                object-contain on the canvas keeps the video's own aspect ratio inside it. */}
+                A live camera track's reported dimensions don't rotate with the
+                device - on mobile, rotating to landscape while the stream is
+                still portrait-shaped pillarboxes hard with object-contain, so
+                the live feed fills the frame with object-cover instead
+                (getCanvasLayout() already supports both modes for click/drag
+                hit-testing). Uploaded/replayed video keeps object-contain -
+                it has no such device-rotation mismatch, and showing the full
+                frame matters more there than filling the frame. */}
             <div className="relative resize overflow-hidden w-full h-full max-w-full max-h-full min-w-[240px] min-h-[135px] rounded-xl border border-slate-800/40 shadow-2xl bg-slate-950">
               <canvas
                 ref={canvasRef}
@@ -2599,7 +2664,7 @@ export function PoseDetector({
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
-                className="w-full h-full object-contain cursor-crosshair bg-slate-950 transition-transform duration-150"
+                className={`w-full h-full cursor-crosshair bg-slate-950 transition-transform duration-150 ${feedSource === 'camera' ? 'object-cover' : 'object-contain'}`}
                 style={{ transform: `scale(${cameraZoom})` }}
                 title={appMode === 'pitching' ? "Drag the strike zone or its corners to calibrate, and tap to plot pitches" : "Pitching mechanics live stream"}
               />
@@ -2937,7 +3002,14 @@ export function PoseDetector({
             ref={hudBarRef}
             style={hudBarPosition ? { left: hudBarPosition.x, top: hudBarPosition.y, right: 'auto', bottom: 'auto' } : undefined}
             className={`absolute z-20 flex flex-col lg:flex-row items-center justify-between gap-2.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 p-2.5 md:p-3 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] ${
-              hudBarPosition ? 'max-w-[calc(100%-1rem)]' : 'bottom-20 md:bottom-4 left-2 right-2 md:left-4 md:right-4'
+              // bottom-20 here (left from a since-removed mobile bottom tab
+              // bar) reserved 80px of clearance nothing needs anymore - on a
+              // short landscape phone that's enough to push this bar's own
+              // top edge above the video container's top and get clipped by
+              // its overflow-hidden, since containerRef is otherwise-empty
+              // dead space rather than shrinking the bar. bottom-4 everywhere
+              // both reclaims that space and removes the clipping risk.
+              hudBarPosition ? 'max-w-[calc(100%-1rem)]' : 'bottom-4 left-2 right-2 md:left-4 md:right-4'
             }`}
           >
             {/* Grip handle - drag anywhere on the canvas to reposition, double-click/tap to reset */}
@@ -3187,59 +3259,7 @@ export function PoseDetector({
                   )}
                 </div>
               ) : (
-                /* Camera Zoom - a popover instead of the Settings modal so the
-                    live feed stays visible while dialing it in */
-                <div className="relative">
-                  <button
-                    onClick={() => setShowZoomMenu(v => !v)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider text-white shadow-lg ${
-                      showZoomMenu
-                        ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
-                        : 'bg-black/50 border-slate-800 hover:bg-black/75'
-                    }`}
-                    title="Camera zoom"
-                  >
-                    <ZoomIn className="w-3.5 h-3.5" />
-                    <span className="font-mono">{cameraZoom.toFixed(1)}x</span>
-                  </button>
-
-                  {showZoomMenu && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-40 bg-black/5"
-                        onClick={() => setShowZoomMenu(false)}
-                      />
-                      <div className="absolute bottom-full mb-2 right-0 w-56 max-lg:fixed max-lg:left-1/2 max-lg:-translate-x-1/2 max-lg:right-auto max-lg:bottom-24 max-lg:mb-0 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-3.5 z-50">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Camera Zoom</span>
-                          <span className="text-xs font-mono text-sky-400 font-bold">{cameraZoom.toFixed(1)}x</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="1"
-                          max="3"
-                          step="0.1"
-                          value={cameraZoom}
-                          onChange={(e) => onCameraZoomChange?.(parseFloat(e.target.value))}
-                          className="w-full accent-sky-500 cursor-pointer"
-                        />
-                        <div className="flex items-center justify-between mt-1.5 text-[9px] text-slate-500 font-mono uppercase">
-                          <span>1x</span>
-                          <span>2x</span>
-                          <span>3x</span>
-                        </div>
-                        {cameraZoom !== 1 && (
-                          <button
-                            onClick={() => onCameraZoomChange?.(1)}
-                            className="w-full mt-2.5 px-3 py-1.5 text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-wider transition-colors cursor-pointer"
-                          >
-                            Reset zoom
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
+                renderZoomControl()
               )}
 
               {/* Snapshot image */}
@@ -3256,15 +3276,21 @@ export function PoseDetector({
                 <span>{isPaused ? 'Resume' : 'Snapshot'}</span>
               </button>
 
-              {/* Slow Motion speed slider */}
-              <button
-                onClick={togglePlaybackSpeed}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/50 hover:bg-black/75 border border-slate-800 text-white rounded-lg transition-all text-[11px] font-bold uppercase tracking-wider font-mono"
-                title="Adjust slow-motion speed multiplier"
-              >
-                <span className="text-[9px] text-slate-500 uppercase tracking-widest font-sans font-bold">Speed:</span>
-                <span className="text-sky-400 font-bold">{playbackSpeed}x</span>
-              </button>
+              {/* Slow Motion speed slider - not useful in Pitch Tracker mode
+                  (no slow-mo playback review happening there), so that slot
+                  becomes a second camera zoom control instead */}
+              {appMode === 'pitching' ? (
+                renderZoomControl()
+              ) : (
+                <button
+                  onClick={togglePlaybackSpeed}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/50 hover:bg-black/75 border border-slate-800 text-white rounded-lg transition-all text-[11px] font-bold uppercase tracking-wider font-mono"
+                  title="Adjust slow-motion speed multiplier"
+                >
+                  <span className="text-[9px] text-slate-500 uppercase tracking-widest font-sans font-bold">Speed:</span>
+                  <span className="text-sky-400 font-bold">{playbackSpeed}x</span>
+                </button>
+              )}
             </div>
           </div>
         </>
