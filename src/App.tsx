@@ -473,8 +473,8 @@ export default function App() {
           canvas overlay (drawing tools, hint banners, camera controls) below it, all of
           which top out at z-40. Collapses to 0 height on phone landscape unless
           mobileChromeExpanded (see the edge tab above). */}
-      <nav className={`h-16 flex items-center justify-between px-4 sm:px-6 bg-slate-900 border-b border-slate-800 shrink-0 z-50 overflow-hidden transition-all duration-200 ${
-        mobileChromeExpanded ? 'max-lg:landscape:h-16' : 'max-lg:landscape:h-0 max-lg:landscape:border-b-0'
+      <nav className={`h-16 flex items-center justify-between px-4 sm:px-6 bg-slate-900 border-b border-slate-800 shrink-0 z-50 transition-all duration-200 ${
+        mobileChromeExpanded ? 'max-lg:landscape:h-16' : 'max-lg:landscape:h-0 max-lg:landscape:border-b-0 max-lg:landscape:overflow-hidden'
       }`}>
         <div className="flex items-center gap-3 sm:gap-4">
           <div className="w-8 h-8 bg-sky-500 rounded flex items-center justify-center">
