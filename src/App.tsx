@@ -419,7 +419,7 @@ export default function App() {
   );
 
   return (
-    <div className="flex flex-col h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
+    <div className="flex flex-col h-viewport w-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
       {/* Top Navigation Bar */}
       {/* z-50 keeps the top bar - and its session menu dropdown - painting above every
           canvas overlay (drawing tools, hint banners, camera controls) below it, all of

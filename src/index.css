@@ -1,1 +1,21 @@
 @import "tailwindcss";
+
+/* 100vh is the layout viewport, not what's actually visible once mobile
+   browser chrome (address bar / toolbar) is showing - the gap is small
+   next to a tall portrait screen but eats a large share of a short
+   landscape one, clipping content (notably the floating HUD control bar
+   docked to the bottom of the video canvas) under the browser's own UI.
+   100dvh tracks the real visible viewport instead. The @supports guard
+   (rather than a same-property fallback pair) is deliberate - the build's
+   CSS minifier collapses two `height` declarations on one selector down
+   to just the last one, which would silently drop the vh fallback for
+   browsers that don't support dvh. */
+.h-viewport {
+  height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  .h-viewport {
+    height: 100dvh;
+  }
+}
