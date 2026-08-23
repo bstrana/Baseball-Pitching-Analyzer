@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn } from 'lucide-react';
+import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn, Maximize, Minimize } from 'lucide-react';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, PITCH_TYPE_INFO, PITCH_TYPES, classifyPitch, classifyMiss, getTargetZoneLabel } from '../types';
 
 // Required to initialize the WebGL backend
@@ -290,6 +290,10 @@ export function PoseDetector({
   const [hasAnalyzed, setHasAnalyzed] = useState(false);
   const hasAnalyzedRef = useRef(false);
   const isAnalyzingRef = useRef(false);
+
+  // Fullscreen - most useful on a phone in landscape, where it also hides
+  // the browser's own address bar/toolbar, unlike our own on-canvas HUD
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Recording states
   const [isRecording, setIsRecording] = useState(false);
@@ -1379,6 +1383,27 @@ export function PoseDetector({
       video.removeEventListener('seeked', handleSeeked);
     };
   }, []);
+
+  // Keep isFullscreen in sync - also catches the user exiting via Escape or
+  // the browser's own UI, not just our own toggle button
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === containerRef.current);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(err => console.warn('Failed to exit fullscreen:', err));
+    } else {
+      containerRef.current.requestFullscreen().catch(err => console.warn('Failed to enter fullscreen:', err));
+    }
+  };
 
   // Keyboard shortcuts listener for video playback
   useEffect(() => {
@@ -3318,6 +3343,20 @@ export function PoseDetector({
                   <span className="text-sky-400 font-bold">{playbackSpeed}x</span>
                 </button>
               )}
+
+              {/* Fullscreen - most useful on a phone in landscape, where it
+                  also hides the browser's own address bar/toolbar */}
+              <button
+                onClick={toggleFullscreen}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider text-white shadow-lg ${
+                  isFullscreen
+                    ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                    : 'bg-black/50 border-slate-800 hover:bg-black/75'
+                }`}
+                title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              >
+                {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
+              </button>
             </div>
           </div>
         </>

@@ -3,7 +3,7 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker, PitchLog } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
 import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession, getPlayerSessionCount } from './pocketbase';
@@ -262,6 +262,12 @@ export default function App() {
   // Session menu (Session Setup / Export / Sign out) - far right of the top bar, all screen sizes
   const [showSessionMenu, setShowSessionMenu] = useState(false);
 
+  // On a phone in landscape, the top nav bar and bottom panel bar each eat a
+  // meaningful slice of the little height there is, so they collapse to a
+  // small edge tab by default there (max-lg:landscape: - has no effect on
+  // portrait or desktop) and only reappear while this is toggled on.
+  const [mobileChromeExpanded, setMobileChromeExpanded] = useState(false);
+
   // Active Mode: 'mechanics' or 'pitching'
   const [appMode, setAppMode] = useState<'mechanics' | 'pitching'>('mechanics');
 
@@ -420,11 +426,24 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-viewport w-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
+      {/* Edge tab - phone landscape only, toggles the top/bottom bars below
+          back into view since they're collapsed there by default */}
+      <button
+        onClick={() => setMobileChromeExpanded(v => !v)}
+        title={mobileChromeExpanded ? 'Hide bars' : 'Show bars'}
+        className="hidden max-lg:landscape:flex fixed top-1/2 right-0 -translate-y-1/2 z-[60] items-center justify-center w-6 h-14 bg-slate-800/90 hover:bg-slate-700 border border-slate-700 border-r-0 rounded-l-lg text-slate-300 shadow-lg backdrop-blur-sm"
+      >
+        {mobileChromeExpanded ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+      </button>
+
       {/* Top Navigation Bar */}
       {/* z-50 keeps the top bar - and its session menu dropdown - painting above every
           canvas overlay (drawing tools, hint banners, camera controls) below it, all of
-          which top out at z-40. */}
-      <nav className="h-16 flex items-center justify-between px-4 sm:px-6 bg-slate-900 border-b border-slate-800 shrink-0 z-50">
+          which top out at z-40. Collapses to 0 height on phone landscape unless
+          mobileChromeExpanded (see the edge tab above). */}
+      <nav className={`h-16 flex items-center justify-between px-4 sm:px-6 bg-slate-900 border-b border-slate-800 shrink-0 z-50 overflow-hidden transition-all duration-200 ${
+        mobileChromeExpanded ? 'max-lg:landscape:h-16' : 'max-lg:landscape:h-0 max-lg:landscape:border-b-0'
+      }`}>
         <div className="flex items-center gap-3 sm:gap-4">
           <div className="w-8 h-8 bg-sky-500 rounded flex items-center justify-center">
             <Crosshair className="w-5 h-5 text-white" />
@@ -598,9 +617,13 @@ export default function App() {
             </div>
           </div>
 
-          {/* Bottom Analysis and Metrics Section - collapsed by default, opened from the thin bar below */}
+          {/* Bottom Analysis and Metrics Section - collapsed by default, opened from the
+              thin bar below. On phone landscape the whole section (bar included)
+              collapses further to 0 height unless mobileChromeExpanded. */}
           {appMode === 'mechanics' && (
-            <div className="flex flex-col bg-slate-900 border-t border-slate-800 shrink-0">
+            <div className={`flex flex-col bg-slate-900 border-t border-slate-800 shrink-0 overflow-hidden transition-all duration-200 ${
+              mobileChromeExpanded ? '' : 'max-lg:landscape:max-h-0 max-lg:landscape:border-t-0'
+            }`}>
               <button
                 onClick={() => setShowMetricsPanel(v => !v)}
                 className="h-9 px-4 flex items-center justify-between text-slate-400 hover:text-slate-200 transition-colors shrink-0 cursor-pointer"
@@ -679,11 +702,12 @@ export default function App() {
 
         {/* Right Sidebar: Pitch Tracking Accuracy Panel - collapsed behind a thin
             bar on mobile (matching the Live Metrics panel pattern), always expanded
-            in its own column on lg+ */}
+            in its own column on lg+. On phone landscape that thin bar collapses
+            further to 0 height unless mobileChromeExpanded. */}
         <aside
           className={`w-full lg:w-[var(--right-sidebar-w)] bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex-col shrink-0 overflow-hidden h-auto lg:h-full relative ${
             appMode === 'pitching' ? 'flex' : 'hidden'
-          }`}
+          } ${mobileChromeExpanded ? '' : 'max-lg:landscape:border-t-0'}`}
           style={{ '--right-sidebar-w': `${rightSidebarWidth}px` } as React.CSSProperties}
         >
           {/* Drag to resize - left edge of this sidebar */}
@@ -695,7 +719,9 @@ export default function App() {
           />
           <button
             onClick={() => setShowPitchTracker(v => !v)}
-            className="lg:hidden h-9 px-4 flex items-center justify-between text-slate-400 hover:text-slate-200 transition-colors shrink-0 cursor-pointer border-b border-slate-800"
+            className={`lg:hidden h-9 px-4 flex items-center justify-between text-slate-400 hover:text-slate-200 transition-colors shrink-0 cursor-pointer border-b border-slate-800 overflow-hidden ${
+              mobileChromeExpanded ? 'max-lg:landscape:h-9' : 'max-lg:landscape:h-0 max-lg:landscape:px-0 max-lg:landscape:border-b-0'
+            }`}
           >
             <span className="text-[10px] uppercase font-bold tracking-widest flex items-center gap-2">
               <Target className="w-3.5 h-3.5 text-rose-400" />
