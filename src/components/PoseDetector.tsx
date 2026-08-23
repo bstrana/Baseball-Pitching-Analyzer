@@ -238,9 +238,11 @@ export function PoseDetector({
   const currentPitchSpeedRef = useRef(currentPitchSpeed);
   const onAddPitchRef = useRef(onAddPitch);
   const appModeRef = useRef(appMode);
+  const cameraViewRef = useRef(cameraView);
   const onConfigChangeRef = useRef(onConfigChange);
   const onKinematicsUpdateRef = useRef(onKinematicsUpdate);
   const kinematicsEmitCounterRef = useRef(0);
+  const metricsEmitCounterRef = useRef(0);
   const defaultVisibleMarkers = {
     head: true,
     arms: true,
@@ -363,6 +365,7 @@ export function PoseDetector({
     currentPitchSpeedRef.current = currentPitchSpeed;
     onAddPitchRef.current = onAddPitch;
     appModeRef.current = appMode;
+    cameraViewRef.current = cameraView;
     onConfigChangeRef.current = onConfigChange;
     onKinematicsUpdateRef.current = onKinematicsUpdate;
     feedSourceRef.current = feedSource;
@@ -1060,7 +1063,7 @@ export function PoseDetector({
 
     if (rightShoulder && leftShoulder && rightHip && leftHip) {
       if (rightShoulder.score! > 0.3 && leftShoulder.score! > 0.3 && rightHip.score! > 0.3 && leftHip.score! > 0.3) {
-        if (cameraView === 'front' || cameraView === 'back') {
+        if (cameraViewRef.current === 'front' || cameraViewRef.current === 'back') {
           // Front/Back view: Calculate lateral tilt
           torsoAngle = Math.atan2(leftShoulder.y - rightShoulder.y, leftShoulder.x - rightShoulder.x) * 180 / Math.PI;
           pelvisAngle = Math.atan2(leftHip.y - rightHip.y, leftHip.x - rightHip.x) * 180 / Math.PI;
@@ -1200,15 +1203,23 @@ export function PoseDetector({
       wristTrajectory.current = [];
     }
 
-    // Update metrics back to parent
-    onMetricsUpdate({
-      rightArmAngle: rAngle,
-      leftArmAngle: lAngle,
-      rightLegAngle: rLegAngle,
-      leftLegAngle: lLegAngle,
-      hipShoulderSeparation: hsSeparation,
-      speeds
-    });
+    // Update metrics back to parent - throttled to ~every 6 frames (matching
+    // the kinematics chart emission below) since these are human-readable
+    // numeric readouts, not something that needs to update at full frame
+    // rate. Without this, setMetrics forces the entire app tree (nav bar,
+    // modals, charts) to re-render on every single animation frame.
+    metricsEmitCounterRef.current += 1;
+    if (metricsEmitCounterRef.current >= 6) {
+      metricsEmitCounterRef.current = 0;
+      onMetricsUpdate({
+        rightArmAngle: rAngle,
+        leftArmAngle: lAngle,
+        rightLegAngle: rLegAngle,
+        leftLegAngle: lLegAngle,
+        hipShoulderSeparation: hsSeparation,
+        speeds
+      });
+    }
   };
 
   const detectPose = async () => {

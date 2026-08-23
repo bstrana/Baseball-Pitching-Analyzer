@@ -48,7 +48,7 @@ const PROFESSIONAL_REFERENCE: KinematicFrame[] = Array.from({ length: 41 }, (_, 
   };
 });
 
-export function KinematicChart({
+function KinematicChartBase({
   pitchNumber,
   pitchType,
   velocity,
@@ -330,3 +330,5 @@ export function KinematicChart({
     </div>
   );
 }
+
+export const KinematicChart = React.memo(KinematicChartBase);

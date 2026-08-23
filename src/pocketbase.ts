@@ -135,3 +135,21 @@ export async function getPlayerSessionCount(playerId: string): Promise<number> {
   ]);
   return mechanics.totalItems + pitch.totalItems;
 }
+
+// Same combined count as getPlayerSessionCount, but for the whole roster at
+// once - 2 requests total (one per collection) instead of 2 per player, so
+// the roster list doesn't fire O(players) requests every time it loads.
+export async function getPlayerSessionCounts(playerIds: string[]): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  if (playerIds.length === 0) return counts;
+
+  const filter = playerIds.map(id => pb.filter('player = {:id}', { id })).join(' || ');
+  const [mechanics, pitch] = await Promise.all([
+    pb.collection('mechanics_sessions').getFullList<{ player: string }>({ filter, fields: 'player' }),
+    pb.collection('pitch_sessions').getFullList<{ player: string }>({ filter, fields: 'player' }),
+  ]);
+  for (const record of [...mechanics, ...pitch]) {
+    counts[record.player] = (counts[record.player] ?? 0) + 1;
+  }
+  return counts;
+}

@@ -1,12 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { PoseDetector, PoseMetrics } from './components/PoseDetector';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
+import type { PoseMetrics } from './components/PoseDetector';
 import { PitchTracker, PitchLog } from './components/PitchTracker';
-import { KinematicChart } from './components/KinematicChart';
+
+// Lazy-loaded: PoseDetector pulls in @tensorflow/tfjs + pose-detection, and
+// KinematicChart pulls in recharts - both are heavy and only needed once the
+// user is actually in mechanics/pitch-tracking mode, not on initial page load.
+const PoseDetector = lazy(() =>
+  import('./components/PoseDetector').then(m => ({ default: m.PoseDetector }))
+);
+const KinematicChart = lazy(() =>
+  import('./components/KinematicChart').then(m => ({ default: m.KinematicChart }))
+);
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness } from './types';
 import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb, Play, StopCircle, MapPin, Clock, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
-import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession, getPlayerSessionCount } from './pocketbase';
+import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession, getPlayerSessionCount, getPlayerSessionCounts } from './pocketbase';
 import { CameraCapabilities, RESOLUTION_PRESETS, FRAME_RATE_PRESETS, listVideoInputDevices, probeCameraCapabilities } from './camera';
 
 const FEET_PER_METER = 3.28084;
@@ -84,10 +93,10 @@ export default function App() {
   const playerIdsKey = players.map(p => p.id).join(',');
   useEffect(() => {
     let active = true;
-    Promise.all(players.map(p => getPlayerSessionCount(p.id).then(count => [p.id, count] as const)))
-      .then((entries) => {
+    getPlayerSessionCounts(players.map(p => p.id))
+      .then((counts) => {
         if (!active) return;
-        setSessionCounts(Object.fromEntries(entries));
+        setSessionCounts(counts);
       })
       .catch(() => {});
     return () => { active = false; };
@@ -594,6 +603,11 @@ export default function App() {
           <div className="flex-1 relative bg-black flex items-center justify-center p-0 lg:p-4 min-h-0">
             <div className="w-full h-full relative lg:rounded-xl overflow-hidden lg:border lg:border-slate-800 lg:shadow-2xl bg-slate-950 flex items-center justify-center">
                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40 pointer-events-none z-10"></div>
+               <Suspense fallback={
+                 <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-sm">
+                   Loading analyzer...
+                 </div>
+               }>
                <PoseDetector
                  onMetricsUpdate={setMetrics}
                  onKinematicsUpdate={setLiveKinematicsData}
@@ -638,6 +652,7 @@ export default function App() {
                  targetMode={targetMode}
                  pitcherHandedness={pitcherHandedness}
                />
+               </Suspense>
             </div>
           </div>
 
@@ -703,16 +718,18 @@ export default function App() {
 
                         {/* Kinematic Sequencing Chart */}
                         <div className="xl:col-span-2">
-                          <KinematicChart
-                            pitchNumber={selectedPitch?.number || null}
-                            pitchType={selectedPitch?.type || null}
-                            velocity={selectedPitch?.velocity || null}
-                            kinematicsData={
-                              selectedPitch?.kinematicsData && selectedPitch.kinematicsData.length > 0
-                                ? selectedPitch.kinematicsData
-                                : liveKinematicsData
-                            }
-                          />
+                          <Suspense fallback={<div className="text-slate-500 text-xs p-4">Loading chart...</div>}>
+                            <KinematicChart
+                              pitchNumber={selectedPitch?.number || null}
+                              pitchType={selectedPitch?.type || null}
+                              velocity={selectedPitch?.velocity || null}
+                              kinematicsData={
+                                selectedPitch?.kinematicsData && selectedPitch.kinematicsData.length > 0
+                                  ? selectedPitch.kinematicsData
+                                  : liveKinematicsData
+                              }
+                            />
+                          </Suspense>
                         </div>
 
                       </div>
