@@ -1628,11 +1628,6 @@ export function PoseDetector({
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Add label
-    ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
-    ctx.font = 'bold 10px "Inter", sans-serif';
-    ctx.fillText('STRIKE ZONE', szX + 6, szY - 6);
-
     // Draw resize handles only while the zone can actually be dragged/resized -
     // once locked, canvas clicks always plot a pitch, so the handles would be
     // misleading clutter.
