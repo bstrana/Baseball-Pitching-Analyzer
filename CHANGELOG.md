@@ -1,3 +1,10 @@
+## 1.2.8
+
+* Fixed the session menu (the three-dot icon in the top-right of the nav
+  bar) opening but rendering invisible - the nav bar's overflow-hidden
+  style, added for the mobile-landscape collapsible chrome, was clipping
+  the dropdown everywhere instead of only in that collapsed state.
+
 ## 1.2.7
 
 * Added a Start/End Session flow: starting a session requires picking a
