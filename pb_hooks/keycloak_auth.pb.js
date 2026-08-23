@@ -48,6 +48,16 @@
 //    protected collections, or it breaks the entire server, not just these
 //    collections. (Confirmed the hard way: a ReferenceError thrown here
 //    once broke /api/health along with everything else.)
+//
+// 6. `team` is synced from Keycloak's userinfo "team" claim on every
+//    request (not just first sight), so a team reassignment in Keycloak
+//    takes effect on the coach's next request. This requires a Keycloak
+//    "User Attribute" protocol mapper on the client (or a client scope
+//    it uses) mapping the "team" user attribute to a "team" token/userinfo
+//    claim - a custom attribute isn't included by default. See
+//    pb_migrations/1700000300_team_view_access.js for how this widens
+//    read access to players/sessions shared by team (view/list only -
+//    create/update/delete stay restricted to the owning coach).
 
 routerUse(new Middleware((e) => {
   const path = e.request.url.path;
@@ -94,13 +104,20 @@ routerUse(new Middleware((e) => {
   if (res.statusCode !== 200 || !res.json || !res.json.sub) throw new UnauthorizedError("Invalid or expired token");
 
   const sub = res.json.sub;
+  const team = res.json.team || "";
   const coaches = e.app.findCollectionByNameOrId("coaches");
   try {
-    e.auth = e.app.findFirstRecordByFilter(coaches, "keycloak_sub = {:sub}", { sub });
+    const record = e.app.findFirstRecordByFilter(coaches, "keycloak_sub = {:sub}", { sub });
+    if (record.get("team") !== team) {
+      record.set("team", team);
+      e.app.save(record);
+    }
+    e.auth = record;
   } catch (err) {
     const record = new Record(coaches, {
       keycloak_sub: sub,
       email: res.json.email || (sub + "@keycloak.local"),
+      team: team,
     });
     record.setPassword($security.randomString(30));
     e.app.save(record);
