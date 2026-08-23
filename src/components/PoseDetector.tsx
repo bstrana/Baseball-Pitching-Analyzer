@@ -86,8 +86,22 @@ interface PoseDetectorProps {
 
   // Which physical camera lens to use ('user' = front/selfie, 'environment' = rear).
   // Controlled entirely from the off-canvas Settings menu - changing it here
-  // restarts the webcam stream with the new lens.
+  // restarts the webcam stream with the new lens. Ignored once uvcDeviceId is set.
   cameraFacingMode?: 'user' | 'environment';
+
+  // USB/UVC camera override, for desktop webcams (e.g. high-fps global-shutter
+  // modules) that expose a specific deviceId plus a discrete resolution/frame
+  // rate mode - unrelated to the mobile front/rear lens picker above, which
+  // stays on facingMode. Leave uvcDeviceId unset/null to use that mobile path
+  // unchanged. Set together from the off-canvas Settings menu.
+  uvcDeviceId?: string | null;
+  uvcWidth?: number | null;
+  uvcHeight?: number | null;
+  uvcFrameRate?: number | null;
+  // Reports the stream's actual negotiated width/height/frameRate once it
+  // opens, since requested UVC constraints are matched best-effort by the
+  // browser and may not land exactly on what was requested.
+  onCameraSettingsChange?: (settings: { width: number; height: number; frameRate: number } | null) => void;
 
   // Reports live/paused status upward so the top bar can show it (replaces
   // the on-canvas "ANALYSIS ACTIVE"/"FEED PAUSED" indicator).
@@ -136,6 +150,11 @@ export function PoseDetector({
   cameraZoom = 1,
   onCameraZoomChange,
   cameraFacingMode = 'environment',
+  uvcDeviceId = null,
+  uvcWidth = null,
+  uvcHeight = null,
+  uvcFrameRate = null,
+  onCameraSettingsChange,
   onAnalysisStatusChange,
   currentPlayerName,
   targetMode = false,
@@ -409,40 +428,67 @@ export function PoseDetector({
     onKinematicsUpdateRef.current?.([]);
   };
 
+  // Reports the stream's actual negotiated width/height/frameRate upward -
+  // UVC constraints are matched best-effort by the browser, so what's
+  // requested and what's actually delivered can differ.
+  const reportActualCameraSettings = (stream: MediaStream) => {
+    const track = stream.getVideoTracks()[0];
+    if (!track || !onCameraSettingsChange) return;
+    const settings = track.getSettings();
+    if (settings.width && settings.height && settings.frameRate) {
+      onCameraSettingsChange({ width: settings.width, height: settings.height, frameRate: Math.round(settings.frameRate) });
+    }
+  };
+
   const startCamera = async (facing: 'user' | 'environment' = cameraFacingMode) => {
     setError(null);
     setFeedSource('camera');
     resetAnalysisState();
     if (!videoRef.current) return;
-    
+
     // Stop existing camera stream first if any
     if (videoRef.current.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
       stream.getTracks().forEach(track => track.stop());
       videoRef.current.srcObject = null;
     }
-    
+
     // Clean up src attribute
     if (videoRef.current.src) {
       videoRef.current.removeAttribute('src');
       videoRef.current.load();
     }
 
+    // A specific USB/UVC device (with its own resolution/frame-rate mode)
+    // takes over entirely from the mobile front/rear facingMode picker.
+    const useUvcDevice = !!uvcDeviceId;
+
     try {
-      const constraints: MediaStreamConstraints = {
-        video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          facingMode: { ideal: facing }
-        },
-        audio: false
-      };
-      
+      const constraints: MediaStreamConstraints = useUvcDevice
+        ? {
+            video: {
+              deviceId: { exact: uvcDeviceId! },
+              width: { ideal: uvcWidth || 1280 },
+              height: { ideal: uvcHeight || 720 },
+              frameRate: { ideal: uvcFrameRate || 30 }
+            },
+            audio: false
+          }
+        : {
+            video: {
+              width: { ideal: 640 },
+              height: { ideal: 480 },
+              facingMode: { ideal: facing }
+            },
+            audio: false
+          };
+
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       videoRef.current.srcObject = stream;
       videoRef.current.playbackRate = playbackSpeed;
       isPausedRef.current = false;
       setIsPaused(false);
+      reportActualCameraSettings(stream);
       videoRef.current.play().catch(err => {
         console.warn("Play info on stream start:", err);
       });
@@ -451,18 +497,21 @@ export function PoseDetector({
       // Fallback: try with minimal constraints (crucial for some mobile browsers)
       try {
         console.log("Attempting fallback camera stream...");
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true, 
-          audio: false 
-        });
+        const stream = await navigator.mediaDevices.getUserMedia(
+          useUvcDevice
+            ? { video: { deviceId: { exact: uvcDeviceId! } }, audio: false }
+            : { video: true, audio: false }
+        );
         videoRef.current.srcObject = stream;
         videoRef.current.playbackRate = playbackSpeed;
         isPausedRef.current = false;
         setIsPaused(false);
+        reportActualCameraSettings(stream);
         videoRef.current.play().catch(e => console.warn("Play error on stream fallback:", e));
       } catch (fallbackErr) {
         console.warn("Fallback camera access failed:", fallbackErr);
         setError("Could not access camera. Please allow camera permissions and ensure no other application is using it.");
+        onCameraSettingsChange?.(null);
       }
     }
   };
@@ -479,6 +528,18 @@ export function PoseDetector({
       }
     }
   }, [cameraFacingMode]);
+
+  // Same restart, for USB/UVC device or mode changes from Settings > Camera.
+  const prevUvcSettingsRef = useRef({ uvcDeviceId, uvcWidth, uvcHeight, uvcFrameRate });
+  useEffect(() => {
+    const prev = prevUvcSettingsRef.current;
+    if (prev.uvcDeviceId !== uvcDeviceId || prev.uvcWidth !== uvcWidth || prev.uvcHeight !== uvcHeight || prev.uvcFrameRate !== uvcFrameRate) {
+      prevUvcSettingsRef.current = { uvcDeviceId, uvcWidth, uvcHeight, uvcFrameRate };
+      if (feedSourceRef.current === 'camera') {
+        startCamera();
+      }
+    }
+  }, [uvcDeviceId, uvcWidth, uvcHeight, uvcFrameRate]);
 
   // Start recording the video feed
   const startRecording = () => {
