@@ -7,7 +7,10 @@
 # in the background by cloudron/start.sh; its SQLite data lives under
 # /app/data/pocketbase so it survives restarts via Cloudron's localstorage
 # addon. Nginx reverse-proxies /pb/ to it so the frontend can talk to it
-# same-origin, no separate exposed port or CORS setup needed.
+# same-origin, no separate exposed port or CORS setup needed. pb_hooks/
+# verifies each request's Keycloak token (via Keycloak's own /userinfo
+# endpoint) to scope players/sessions per-coach - see
+# pb_hooks/keycloak_auth.pb.js for details.
 #
 # Build & install with the Cloudron CLI from the repo root:
 #   cloudron build
@@ -46,6 +49,7 @@ RUN mkdir -p /app/code
 COPY --from=build /app/dist /app/code/dist
 COPY --from=pocketbase /tmp/pocketbase /app/code/pocketbase/pocketbase
 COPY pb_migrations /app/code/pocketbase/pb_migrations
+COPY pb_hooks /app/code/pocketbase/pb_hooks
 COPY cloudron/nginx.conf /app/code/cloudron/nginx.conf
 COPY cloudron/start.sh /app/code/cloudron/start.sh
 RUN chmod +x /app/code/cloudron/start.sh /app/code/pocketbase/pocketbase

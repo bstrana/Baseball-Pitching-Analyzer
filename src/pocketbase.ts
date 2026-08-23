@@ -1,10 +1,24 @@
 import PocketBase from 'pocketbase';
 import { Pitch, KinematicFrame, StrikeZoneConfig } from './types';
 import { PoseMetrics } from './components/PoseDetector';
+import { keycloak, keycloakEnabled } from './auth';
 
 // Reverse-proxied by nginx (see cloudron/nginx.conf) so this is always
 // same-origin - no separate URL/API key to configure, unlike Keycloak.
 export const pb = new PocketBase('/pb');
+
+// Attaches the coach's Keycloak access token to every PocketBase request so
+// pb_hooks/keycloak_auth.pb.js can verify it (against Keycloak's own
+// /userinfo endpoint) and scope players/mechanics_sessions/pitch_sessions
+// to that coach - see pb_migrations/1700000200_coach_auth.js for the rules
+// this enforces. Without this header, every request to those collections
+// is rejected by the backend regardless of what the UI shows.
+pb.beforeSend = (url, options) => {
+  if (keycloakEnabled && keycloak?.token) {
+    options.headers = { ...options.headers, Authorization: `Bearer ${keycloak.token}` };
+  }
+  return { url, options };
+};
 
 export interface Player {
   id: string;

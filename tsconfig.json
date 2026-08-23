@@ -26,6 +26,7 @@
   "exclude": [
     "node_modules",
     "dist",
-    "pb_migrations"
+    "pb_migrations",
+    "pb_hooks"
   ]
 }
