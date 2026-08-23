@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn } from 'lucide-react';
-import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, PITCH_TYPE_INFO, classifyPitch, classifyMiss, getTargetZoneLabel } from '../types';
+import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, PITCH_TYPE_INFO, PITCH_TYPES, classifyPitch, classifyMiss, getTargetZoneLabel } from '../types';
 
 // Required to initialize the WebGL backend
 import '@tensorflow/tfjs-backend-webgl';
@@ -53,6 +53,7 @@ interface PoseDetectorProps {
   selectedPitchId: string | null;
   setSelectedPitchId: (id: string | null) => void;
   currentPitchType: PitchType;
+  setCurrentPitchType?: (type: PitchType) => void;
   currentPitchSpeed: number;
   visibleMarkers?: {
     head: boolean;
@@ -135,6 +136,7 @@ export function PoseDetector({
   selectedPitchId,
   setSelectedPitchId,
   currentPitchType,
+  setCurrentPitchType,
   currentPitchSpeed,
   visibleMarkers,
   setShowSkeleton,
@@ -198,6 +200,9 @@ export function PoseDetector({
   const [isLoaded, setIsLoaded] = useState(false);
   const [showSourceMenu, setShowSourceMenu] = useState(false);
   const [showZoomMenu, setShowZoomMenu] = useState(false);
+  // Pitching mode has no use for the Camera Zoom popover on the canvas HUD
+  // bar - that slot instead becomes a quick pitch type picker there.
+  const [showPitchTypeMenu, setShowPitchTypeMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
@@ -1413,6 +1418,14 @@ export function PoseDetector({
       setShowDrawTools(false);
       setActiveDrawTool('none');
     }
+  }, [appMode]);
+
+  // The HUD bar's rightmost popover swaps between Camera Zoom (mechanics)
+  // and Pitch Type (pitching) - close whichever one is open on mode switch
+  // so it doesn't linger open showing the wrong control.
+  useEffect(() => {
+    setShowZoomMenu(false);
+    setShowPitchTypeMenu(false);
   }, [appMode]);
 
   // Report live/paused status upward for the top bar's status badge
@@ -3127,59 +3140,107 @@ export function PoseDetector({
                 )}
               </div>
 
-              {/* Camera Zoom - a popover instead of the Settings modal so the
-                  live feed stays visible while dialing it in */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowZoomMenu(v => !v)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider text-white shadow-lg ${
-                    showZoomMenu
-                      ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
-                      : 'bg-black/50 border-slate-800 hover:bg-black/75'
-                  }`}
-                  title="Camera zoom"
-                >
-                  <ZoomIn className="w-3.5 h-3.5" />
-                  <span className="font-mono">{cameraZoom.toFixed(1)}x</span>
-                </button>
+              {appMode === 'pitching' ? (
+                /* Pitching mode has no use for a canvas-side camera zoom
+                   control - this slot becomes a quick pitch type picker so
+                   the type can be changed without leaving the live feed. */
+                <div className="relative">
+                  <button
+                    onClick={() => setShowPitchTypeMenu(v => !v)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider text-white shadow-lg ${
+                      showPitchTypeMenu
+                        ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                        : 'bg-black/50 border-slate-800 hover:bg-black/75'
+                    }`}
+                    title="Pitch type"
+                  >
+                    <Target className="w-3.5 h-3.5" />
+                    <span className="font-mono">{PITCH_TYPE_INFO[currentPitchType].abbreviation}</span>
+                  </button>
 
-                {showZoomMenu && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-40 bg-black/5"
-                      onClick={() => setShowZoomMenu(false)}
-                    />
-                    <div className="absolute bottom-full mb-2 right-0 w-56 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-3.5 z-50">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Camera Zoom</span>
-                        <span className="text-xs font-mono text-sky-400 font-bold">{cameraZoom.toFixed(1)}x</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="1"
-                        max="3"
-                        step="0.1"
-                        value={cameraZoom}
-                        onChange={(e) => onCameraZoomChange?.(parseFloat(e.target.value))}
-                        className="w-full accent-sky-500 cursor-pointer"
+                  {showPitchTypeMenu && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40 bg-black/5"
+                        onClick={() => setShowPitchTypeMenu(false)}
                       />
-                      <div className="flex items-center justify-between mt-1.5 text-[9px] text-slate-500 font-mono uppercase">
-                        <span>1x</span>
-                        <span>2x</span>
-                        <span>3x</span>
+                      <div className="absolute bottom-full mb-2 right-0 w-64 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-3.5 z-50">
+                        <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block mb-2">Pitch Type</span>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {PITCH_TYPES.map((type) => (
+                            <button
+                              key={type}
+                              onClick={() => { setCurrentPitchType?.(type); setShowPitchTypeMenu(false); }}
+                              title={type}
+                              className={`py-1.5 px-1 rounded text-center border transition-all ${
+                                currentPitchType === type
+                                  ? 'bg-sky-600 border-sky-400 text-white shadow-md shadow-sky-600/20'
+                                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+                              }`}
+                            >
+                              <span className="block text-[10px] font-bold leading-tight">{PITCH_TYPE_INFO[type].abbreviation}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      {cameraZoom !== 1 && (
-                        <button
-                          onClick={() => onCameraZoomChange?.(1)}
-                          className="w-full mt-2.5 px-3 py-1.5 text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-wider transition-colors cursor-pointer"
-                        >
-                          Reset zoom
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                /* Camera Zoom - a popover instead of the Settings modal so the
+                    live feed stays visible while dialing it in */
+                <div className="relative">
+                  <button
+                    onClick={() => setShowZoomMenu(v => !v)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-[11px] font-bold uppercase tracking-wider text-white shadow-lg ${
+                      showZoomMenu
+                        ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                        : 'bg-black/50 border-slate-800 hover:bg-black/75'
+                    }`}
+                    title="Camera zoom"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                    <span className="font-mono">{cameraZoom.toFixed(1)}x</span>
+                  </button>
+
+                  {showZoomMenu && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40 bg-black/5"
+                        onClick={() => setShowZoomMenu(false)}
+                      />
+                      <div className="absolute bottom-full mb-2 right-0 w-56 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-3.5 z-50">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Camera Zoom</span>
+                          <span className="text-xs font-mono text-sky-400 font-bold">{cameraZoom.toFixed(1)}x</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="3"
+                          step="0.1"
+                          value={cameraZoom}
+                          onChange={(e) => onCameraZoomChange?.(parseFloat(e.target.value))}
+                          className="w-full accent-sky-500 cursor-pointer"
+                        />
+                        <div className="flex items-center justify-between mt-1.5 text-[9px] text-slate-500 font-mono uppercase">
+                          <span>1x</span>
+                          <span>2x</span>
+                          <span>3x</span>
+                        </div>
+                        {cameraZoom !== 1 && (
+                          <button
+                            onClick={() => onCameraZoomChange?.(1)}
+                            className="w-full mt-2.5 px-3 py-1.5 text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-wider transition-colors cursor-pointer"
+                          >
+                            Reset zoom
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* Snapshot image */}
               <button
