@@ -1,3 +1,25 @@
+## 1.2.5
+
+* Fixed the live camera feed rendering as a narrow pillarboxed strip with
+  large dead black bars in mobile landscape orientation - the raw camera
+  stream's dimensions don't rotate with the device, so the feed now fills
+  the frame instead of preserving a stale portrait aspect ratio.
+  Uploaded/replayed video is unaffected.
+* Fixed the floating canvas HUD control bar (Record/Zoom/Source/Snapshot)
+  getting clipped out of view in a short mobile landscape video area - it
+  reserved 80px of bottom clearance left over from a bottom tab bar
+  removed back in 1.1.3, which was enough to push it above the video
+  container's own top edge and get clipped there.
+* Pitch Tracker mode's HUD bar now has a camera zoom control in the slot
+  the slow-mo playback speed control used, since speed isn't useful while
+  tracking live pitches.
+* Recorded throws and snapshots now download named after the selected
+  player and the date/time they were captured (e.g.
+  `jake-martinez_2026-08-22_16-45-03.webm`) instead of a bare UUID or raw
+  timestamp.
+* Deleting a recorded throw now releases its memory immediately instead
+  of leaking it for the rest of the session.
+
 ## 1.2.4
 
 * Pitch Tracker mode's canvas HUD bar now shows a pitch type quick-picker
