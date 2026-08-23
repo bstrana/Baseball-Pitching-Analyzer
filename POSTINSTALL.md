@@ -33,6 +33,24 @@ upgrade; any player saved without a recorded owner can't be matched to a
 coach automatically and needs reassigning by hand via the admin dashboard
 below.
 
+### Sharing a roster across a team (optional)
+
+Coaches who share the same Keycloak "team" value can view (but not edit or
+delete) each other's players and sessions - useful for a coaching staff
+working from one roster. To enable it:
+
+1. In your Keycloak realm, set a `team` user attribute on each coach's
+   account (Users → select a user → Attributes) to the same value for
+   everyone on that team, e.g. `team` = `Varsity`.
+2. On this app's client (or a client scope it uses), add a Mapper of type
+   "User Attribute": User Attribute `team`, Token Claim Name `team`, and
+   enable it for both the ID token and userinfo.
+3. No app restart needed - each coach's team takes effect on their next
+   request after you save the mapper.
+
+Coaches with no `team` attribute set keep seeing only their own data, same
+as before.
+
 To reach the PocketBase admin dashboard (to browse/export the raw data),
 add to `/app/data/config.env`:
 ```
