@@ -3118,7 +3118,7 @@ export function PoseDetector({
                       className="fixed inset-0 z-40 bg-black/5"
                       onClick={() => setShowSourceMenu(false)}
                     />
-                    <div className="absolute bottom-full mb-2 right-0 w-48 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl py-1 z-50">
+                    <div className="absolute bottom-full mb-2 right-0 w-48 max-lg:fixed max-lg:left-1/2 max-lg:-translate-x-1/2 max-lg:right-auto max-lg:bottom-24 max-lg:mb-0 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl py-1 z-50">
                       <button
                         onClick={() => { startCamera(); setShowSourceMenu(false); }}
                         className={`w-full text-left px-3.5 py-2.5 text-xs transition-colors flex items-center gap-2.5 ${
@@ -3164,7 +3164,7 @@ export function PoseDetector({
                         className="fixed inset-0 z-40 bg-black/5"
                         onClick={() => setShowPitchTypeMenu(false)}
                       />
-                      <div className="absolute bottom-full mb-2 right-0 w-64 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-3.5 z-50">
+                      <div className="absolute bottom-full mb-2 right-0 w-64 max-lg:fixed max-lg:left-1/2 max-lg:-translate-x-1/2 max-lg:right-auto max-lg:bottom-24 max-lg:mb-0 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-3.5 z-50">
                         <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block mb-2">Pitch Type</span>
                         <div className="grid grid-cols-3 gap-1.5">
                           {PITCH_TYPES.map((type) => (
@@ -3209,7 +3209,7 @@ export function PoseDetector({
                         className="fixed inset-0 z-40 bg-black/5"
                         onClick={() => setShowZoomMenu(false)}
                       />
-                      <div className="absolute bottom-full mb-2 right-0 w-56 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-3.5 z-50">
+                      <div className="absolute bottom-full mb-2 right-0 w-56 max-lg:fixed max-lg:left-1/2 max-lg:-translate-x-1/2 max-lg:right-auto max-lg:bottom-24 max-lg:mb-0 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-3.5 z-50">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Camera Zoom</span>
                           <span className="text-xs font-mono text-sky-400 font-bold">{cameraZoom.toFixed(1)}x</span>
