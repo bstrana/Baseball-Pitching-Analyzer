@@ -3,10 +3,11 @@ import { PoseDetector, PoseMetrics } from './components/PoseDetector';
 import { PitchTracker, PitchLog } from './components/PitchTracker';
 import { KinematicChart } from './components/KinematicChart';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
 import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession, getPlayerSessionCount } from './pocketbase';
+import { CameraCapabilities, RESOLUTION_PRESETS, FRAME_RATE_PRESETS, listVideoInputDevices, probeCameraCapabilities } from './camera';
 
 const FEET_PER_METER = 3.28084;
 
@@ -190,6 +191,69 @@ export default function App() {
 
   // Which physical camera lens to use when on the live webcam feed
   const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
+
+  // USB/UVC camera override (e.g. a high-fps global-shutter module for
+  // slow-mo) - a specific deviceId plus a chosen resolution/frame-rate mode,
+  // separate from the mobile facingMode picker above. null = use that
+  // mobile path unchanged.
+  const [videoInputDevices, setVideoInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [uvcDeviceId, setUvcDeviceId] = useState<string | null>(null);
+  const [uvcCapabilities, setUvcCapabilities] = useState<CameraCapabilities | null>(null);
+  const [uvcResolution, setUvcResolution] = useState<{ width: number; height: number }>({ width: 1280, height: 720 });
+  const [uvcFrameRate, setUvcFrameRate] = useState(30);
+  const [uvcProbing, setUvcProbing] = useState(false);
+  // What the camera actually delivered, reported back from PoseDetector -
+  // requested UVC constraints are matched best-effort by the browser.
+  const [actualCameraSettings, setActualCameraSettings] = useState<{ width: number; height: number; frameRate: number } | null>(null);
+
+  const handleScanCameras = async () => {
+    try {
+      const devices = await listVideoInputDevices();
+      setVideoInputDevices(devices);
+    } catch (err) {
+      console.warn('Could not list camera devices:', err);
+    }
+  };
+
+  const handleSelectUvcDevice = async (deviceId: string) => {
+    if (!deviceId) {
+      setUvcDeviceId(null);
+      setUvcCapabilities(null);
+      return;
+    }
+    setUvcDeviceId(deviceId);
+    setUvcProbing(true);
+    const caps = await probeCameraCapabilities(deviceId);
+    setUvcProbing(false);
+    setUvcCapabilities(caps);
+    if (caps) {
+      // Default to the highest offered resolution/frame-rate combo the
+      // device actually reports supporting. If none of the presets fit
+      // (a low-end device reporting less than our lowest preset), fall
+      // back to the device's own reported max rather than leaving state
+      // pointed at a value the device doesn't support.
+      const bestResolution = RESOLUTION_PRESETS.find(p => p.width <= caps.maxWidth && p.height <= caps.maxHeight);
+      const bestFrameRate = [...FRAME_RATE_PRESETS].reverse().find(fps => fps <= caps.maxFrameRate);
+      setUvcResolution(bestResolution ? { width: bestResolution.width, height: bestResolution.height } : { width: caps.maxWidth, height: caps.maxHeight });
+      setUvcFrameRate(bestFrameRate ?? caps.maxFrameRate);
+    }
+  };
+
+  // Preset options for the pickers below, filtered down to what the
+  // selected device reports supporting - always including the device's own
+  // max so the dropdown never ends up empty for a low-end device.
+  const uvcResolutionOptions = (() => {
+    const inRange = uvcCapabilities
+      ? RESOLUTION_PRESETS.filter(p => p.width <= uvcCapabilities.maxWidth && p.height <= uvcCapabilities.maxHeight)
+      : [...RESOLUTION_PRESETS];
+    if (!uvcCapabilities) return inRange;
+    const hasMax = inRange.some(p => p.width === uvcCapabilities.maxWidth && p.height === uvcCapabilities.maxHeight);
+    return hasMax ? inRange : [...inRange, { width: uvcCapabilities.maxWidth, height: uvcCapabilities.maxHeight, label: 'Max' }];
+  })();
+
+  const uvcFrameRateOptions = uvcCapabilities
+    ? Array.from(new Set([...FRAME_RATE_PRESETS.filter(fps => fps <= uvcCapabilities.maxFrameRate), uvcCapabilities.maxFrameRate])).sort((a, b) => a - b)
+    : [...FRAME_RATE_PRESETS];
 
   // Live/paused status, reported up from PoseDetector - shown in the nav bar
   // instead of the old on-canvas "ANALYSIS ACTIVE"/"FEED PAUSED" badge.
@@ -520,6 +584,11 @@ export default function App() {
                  cameraZoom={cameraZoom}
                  onCameraZoomChange={setCameraZoom}
                  cameraFacingMode={cameraFacingMode}
+                 uvcDeviceId={uvcDeviceId}
+                 uvcWidth={uvcResolution.width}
+                 uvcHeight={uvcResolution.height}
+                 uvcFrameRate={uvcFrameRate}
+                 onCameraSettingsChange={setActualCameraSettings}
                  onAnalysisStatusChange={setAnalysisPaused}
                  currentPlayerName={selectedPlayer?.name}
                  targetMode={targetMode}
@@ -958,6 +1027,91 @@ export default function App() {
                         </span>
                         <RefreshCw className="w-4 h-4 text-sky-400" />
                       </button>
+                    </div>
+
+                    <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                      <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-1">USB / UVC Camera (Slow-Mo)</h4>
+                      <p className="text-[11px] text-slate-400 mb-4">
+                        Use a USB-connected camera (e.g. a high-fps global-shutter module) instead of the lens above, and pick its resolution/frame-rate mode. Phone cameras aren't supported here - browsers cap those well below the phone's native slow-mo capability, so record slow-mo on the phone itself and upload the clip instead.
+                      </p>
+
+                      <button
+                        onClick={handleScanCameras}
+                        className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg border bg-slate-800 border-slate-700/60 text-slate-200 hover:bg-slate-750 transition-all cursor-pointer mb-3"
+                      >
+                        <span className="text-xs font-bold uppercase tracking-wider">Scan for Cameras</span>
+                        <Usb className="w-4 h-4 text-sky-400" />
+                      </button>
+
+                      {videoInputDevices.length > 0 && (
+                        <div className="mb-3">
+                          <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">Device</label>
+                          <select
+                            value={uvcDeviceId || ''}
+                            onChange={(e) => handleSelectUvcDevice(e.target.value)}
+                            className="w-full bg-slate-800 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-sky-500"
+                          >
+                            <option value="">Default (mobile lens above)</option>
+                            {videoInputDevices.map((d, i) => (
+                              <option key={d.deviceId} value={d.deviceId}>{d.label || `Camera ${i + 1}`}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {uvcDeviceId && (
+                        <>
+                          {uvcProbing && (
+                            <p className="text-[10px] text-slate-500 mb-3">Detecting supported resolutions/frame rates...</p>
+                          )}
+                          {!uvcProbing && uvcCapabilities && (
+                            <p className="text-[10px] text-slate-500 mb-3">
+                              Device reports up to {uvcCapabilities.maxWidth}x{uvcCapabilities.maxHeight} @ {uvcCapabilities.maxFrameRate}fps.
+                            </p>
+                          )}
+                          {!uvcProbing && !uvcCapabilities && (
+                            <p className="text-[10px] text-amber-400/80 mb-3">
+                              Could not detect this device's capability range - presets below are shown unfiltered.
+                            </p>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-3 mb-3">
+                            <div>
+                              <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">Resolution</label>
+                              <select
+                                value={`${uvcResolution.width}x${uvcResolution.height}`}
+                                onChange={(e) => {
+                                  const [width, height] = e.target.value.split('x').map(Number);
+                                  setUvcResolution({ width, height });
+                                }}
+                                className="w-full bg-slate-800 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-sky-500"
+                              >
+                                {uvcResolutionOptions.map(p => (
+                                  <option key={p.label} value={`${p.width}x${p.height}`}>{p.label} ({p.width}x{p.height})</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">Frame Rate</label>
+                              <select
+                                value={uvcFrameRate}
+                                onChange={(e) => setUvcFrameRate(Number(e.target.value))}
+                                className="w-full bg-slate-800 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-sky-500"
+                              >
+                                {uvcFrameRateOptions.map(fps => (
+                                  <option key={fps} value={fps}>{fps} fps</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          {actualCameraSettings && (
+                            <p className="text-[10px] text-emerald-400 font-mono">
+                              Actual stream: {actualCameraSettings.width}x{actualCameraSettings.height} @ {actualCameraSettings.frameRate}fps
+                            </p>
+                          )}
+                        </>
+                      )}
                     </div>
 
                     <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
