@@ -1,3 +1,23 @@
+## 1.2.7
+
+* Added a Start/End Session flow: starting a session requires picking a
+  player from the roster (or adding a new one) and entering a location,
+  with a live duration clock in the nav bar while it runs. Ending a
+  session requires a closing note, then a choice of Export (JSON) or
+  Save to Database - saving/exporting is no longer available outside
+  this flow. The player's name now displays as a top-center HUD on the
+  video canvas while a session is active.
+* Added an Avg Velo stat next to Max Velo on the Pitch Tracker's
+  on-canvas overlay.
+* Performance: the live metrics readout was updating on every single
+  animation frame (up to 60 times a second), forcing the whole app to
+  re-render that often - now throttled to match the kinematics chart.
+  TensorFlow.js and the chart library are now loaded on demand instead
+  of upfront, cutting the initial page load from ~3.4MB to ~855KB of
+  JavaScript. Also fixed camera view changes not being picked up live
+  by the pose detection loop, and replaced a per-player roster fetch
+  with a single bulk query.
+
 ## 1.2.6
 
 * Replaced the Interactive PitchCast mini-map in the Pitch Tracker side
