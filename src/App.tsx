@@ -276,7 +276,7 @@ export default function App() {
   const [showStrikeZone, setShowStrikeZone] = useState(true);
   // Unlocked: canvas clicks drag/resize the zone. Locked: canvas clicks only plot pitches.
   const [strikeZoneLocked, setStrikeZoneLocked] = useState(false);
-  // Shows/hides the MPH label on plotted pitches (video canvas + Interactive PitchCast)
+  // Shows/hides the MPH label on plotted pitches on the video canvas
   const [showPitchSpeeds, setShowPitchSpeeds] = useState(true);
   const [currentPitchType, setCurrentPitchType] = useState<PitchType>('Four-Seam Fastball');
   const [currentPitchSpeed, setCurrentPitchSpeed] = useState<number>(92);
@@ -715,7 +715,6 @@ export default function App() {
             <div className="flex-1 overflow-y-auto p-4 min-h-0 max-h-[420px] lg:max-h-none">
               <PitchTracker
                 pitches={pitches}
-                onAddPitch={handleAddPitch}
                 config={strikeZoneConfig}
                 onConfigChange={setStrikeZoneConfig}
                 showStrikeZone={showStrikeZone}
@@ -728,8 +727,6 @@ export default function App() {
                 setCurrentPitchType={setCurrentPitchType}
                 currentPitchSpeed={currentPitchSpeed}
                 setCurrentPitchSpeed={setCurrentPitchSpeed}
-                selectedPitchId={selectedPitchId}
-                setSelectedPitchId={setSelectedPitchId}
                 targetMode={targetMode}
                 setTargetMode={setTargetMode}
                 pitcherHandedness={pitcherHandedness}
