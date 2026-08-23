@@ -546,6 +546,45 @@
       "ts": "Sat, 22 Aug 2026 23:45:00 GMT",
       "publishState": "published",
       "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.2.6"
+    },
+    "1.2.7": {
+      "manifest": {
+        "id": "io.github.bstrana.baseball-pitching-analyzer",
+        "title": "Baseball Pitching Analyzer",
+        "author": "bstrana",
+        "description": "Real-time baseball pitching and swing mechanics analysis, powered by TensorFlow.js pose detection running entirely in the browser. Track pitching and hitting mechanics live from your webcam — all processing happens client-side in the browser. Sign-in via Keycloak is required. Player rosters and saved sessions are stored in a bundled PocketBase backend.",
+        "tagline": "Real-time baseball pitching & swing mechanics analysis",
+        "version": "1.2.7",
+        "manifestVersion": 2,
+        "minBoxVersion": "9.1.0",
+        "website": "https://github.com/bstrana/Baseball-Pitching-Analyzer",
+        "contactEmail": "tomislav.bosanac@gmail.com",
+        "healthCheckPath": "/health",
+        "httpPort": 8000,
+        "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.2.7",
+        "addons": {
+          "localstorage": {}
+        },
+        "icon": "file://appicon.png",
+        "iconUrl": "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/appicon.png",
+        "tags": [
+          "sports",
+          "baseball",
+          "video",
+          "analytics"
+        ],
+        "mediaLinks": [
+          "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/appicon.png"
+        ],
+        "changelog": "Added a Start/End Session flow - starting requires picking a player and entering a location, with a live duration clock, and ending requires a closing note plus a choice of Export (JSON) or Save to Database; saving/exporting is no longer available outside this flow. The player's name now shows as a top-center HUD on the video canvas during a session. Added an Avg Velo stat next to Max Velo on the Pitch Tracker overlay. Also shipped a round of performance fixes: throttled the live metrics readout (was re-rendering the whole app up to 60x/sec), loaded TensorFlow.js and the chart library on demand instead of upfront (cutting initial JS from ~3.4MB to ~855KB), fixed camera view changes not being picked up live, and replaced a per-player roster fetch with a single bulk query.",
+        "postInstallMessage": "This app requires Keycloak sign-in. Create a client for this app in your Keycloak realm, then edit /app/data/config.env (KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID) and restart the app from the Cloudron dashboard. Until then, the app shows a 'sign-in not configured' message. Player rosters and saved sessions are stored in a bundled PocketBase backend - optionally set PB_ADMIN_EMAIL and PB_ADMIN_PASSWORD in the same config.env to reach its admin dashboard at this app's URL + /pb/_/.",
+        "packagerName": "bstrana",
+        "packagerUrl": "https://github.com/bstrana"
+      },
+      "creationDate": "Sun, 23 Aug 2026 20:11:00 GMT",
+      "ts": "Sun, 23 Aug 2026 20:11:00 GMT",
+      "publishState": "published",
+      "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.2.7"
     }
   }
 }
