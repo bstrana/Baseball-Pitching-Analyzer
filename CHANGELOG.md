@@ -1,3 +1,21 @@
+## 1.2.11
+
+* Added a manual angle tool (Session Setup > Calibration > Measure Angle):
+  click three points on the video - a ray end, the vertex, then the
+  other ray end - to read the angle between them, no calibration
+  needed.
+* Added an alternative way to calibrate distance measurement: instead
+  of drawing a reference line, use "Calibrate from &lt;Player&gt;'s
+  Height" with the pitcher's height already on their profile.
+* Fixed visible jitter in the pose tracking overlay - the skeleton
+  dots would drift slightly even when the subject was standing
+  completely still, since each frame was an independent estimate with
+  no smoothing. Frame-to-frame noise is now filtered out without
+  adding lag during actual fast motion like a pitch.
+* The floating video control bar can now be resized (drag the new
+  handle at its bottom-right corner, double-click to reset), in
+  addition to being repositionable as before.
+
 ## 1.2.10
 
 * Coaches sharing the same team (set via a Keycloak profile attribute)
