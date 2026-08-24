@@ -124,12 +124,17 @@ interface PoseDetectorProps {
   onConfigChange?: (config: StrikeZoneConfig) => void;
 
   // Distance calibration & measurement, and manual angle measurement
-  measureMode?: 'none' | 'calibrate' | 'measure' | 'angle';
-  onMeasureModeChange?: (mode: 'none' | 'calibrate' | 'measure' | 'angle') => void;
+  measureMode?: 'none' | 'calibrate' | 'measure' | 'angle' | 'height';
+  onMeasureModeChange?: (mode: 'none' | 'calibrate' | 'measure' | 'angle' | 'height') => void;
   pixelsPerFoot?: number | null;
   onCalibrationPixelDistance?: (pixelDistance: number) => void;
   onMeasurementComplete?: (feet: number) => void;
   onAngleMeasured?: (angleDegrees: number) => void;
+  // Calibrates pixelsPerFoot from the pitcher's known height instead of a
+  // hand-drawn line - reports the estimated standing-height pixel span once
+  // a confident full-body frame appears; the caller divides by the player's
+  // real height to get the scale.
+  onHeightCalibrationPixels?: (pixelHeight: number) => void;
   measurementUnit?: 'ft' | 'm';
 
   // Digital camera zoom (1x - 3x) applied as a CSS scale on the video canvas.
@@ -202,6 +207,7 @@ export function PoseDetector({
   onCalibrationPixelDistance,
   onMeasurementComplete,
   onAngleMeasured,
+  onHeightCalibrationPixels,
   measurementUnit = 'ft',
   cameraZoom = 1,
   onCameraZoomChange,
@@ -422,6 +428,7 @@ export function PoseDetector({
   const angleResultRef = useRef(angleResult);
   const angleHoverPointRef = useRef(angleHoverPoint);
   const onAngleMeasuredRef = useRef(onAngleMeasured);
+  const onHeightCalibrationPixelsRef = useRef(onHeightCalibrationPixels);
 
   useEffect(() => {
     strikeZoneConfigRef.current = strikeZoneConfig;
@@ -461,6 +468,7 @@ export function PoseDetector({
     angleResultRef.current = angleResult;
     angleHoverPointRef.current = angleHoverPoint;
     onAngleMeasuredRef.current = onAngleMeasured;
+    onHeightCalibrationPixelsRef.current = onHeightCalibrationPixels;
     targetModeRef.current = targetMode;
     pitcherHandednessRef.current = pitcherHandedness;
 
@@ -1080,6 +1088,25 @@ export function PoseDetector({
     const keypointMap = new Map<string, poseDetection.Keypoint>(
       keypoints.map(kp => [kp.name || '', kp])
     );
+
+    // Height-based calibration: keeps trying every frame (rather than firing
+    // once and giving up) until a confident full-body view shows up, since
+    // the pitcher may not be framed correctly the instant this was armed.
+    // Nose-to-ankle is used as a proxy for standing height and divided by
+    // 0.93 (published average adult eye/nose height as a fraction of total
+    // height) to estimate it - MoveNet has no head-top or sole keypoint, so
+    // this is an approximation, not a precise measurement.
+    if (measureModeRef.current === 'height') {
+      const nose = keypointMap.get('nose');
+      const ankles = [keypointMap.get('left_ankle'), keypointMap.get('right_ankle')]
+        .filter((a): a is poseDetection.Keypoint => !!a && !!a.score && a.score > 0.3);
+      if (nose && nose.score && nose.score > 0.3 && ankles.length > 0) {
+        const ankleY = ankles.reduce((sum, a) => sum + a.y, 0) / ankles.length;
+        const estimatedHeightPixels = Math.abs(ankleY - nose.y) / 0.93;
+        onHeightCalibrationPixelsRef.current?.(estimatedHeightPixels);
+        onMeasureModeChangeRef.current?.('none');
+      }
+    }
 
     const rightShoulder = keypointMap.get('right_shoulder');
     const rightElbow = keypointMap.get('right_elbow');
@@ -2115,6 +2142,12 @@ export function PoseDetector({
 
   // Handle dragging and clicking on the canvas
   const handleStart = (clientX: number, clientY: number) => {
+    // Height calibration doesn't need any canvas interaction - it just
+    // watches the pose stream (see processPoseFrame) - so ignore clicks
+    // entirely rather than letting them fall through to drawing/strike-zone/
+    // target-mode handling below.
+    if (measureModeRef.current === 'height') return;
+
     if (measureModeRef.current === 'calibrate' || measureModeRef.current === 'measure') {
       const layout = getCanvasLayout();
       if (!layout) return;
@@ -2421,6 +2454,11 @@ export function PoseDetector({
   };
 
   const handleEnd = (clientX: number, clientY: number, wasClick: boolean) => {
+    // See handleStart - height calibration needs no canvas interaction, so
+    // a stray tap/click while it's armed shouldn't log a pitch or anything
+    // else the fallthrough logic below would otherwise do.
+    if (measureModeRef.current === 'height') return;
+
     if (measureModeRef.current === 'calibrate' || measureModeRef.current === 'measure') {
       const pts = measurePointsRef.current;
       if (pts.length === 2) {
@@ -2989,11 +3027,12 @@ export function PoseDetector({
           {measureMode !== 'none' && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 px-3.5 py-2 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-lg shadow-lg">
               <span className={`text-[10px] font-bold uppercase tracking-wider ${
-                measureMode === 'calibrate' ? 'text-amber-300' : measureMode === 'angle' ? 'text-violet-300' : 'text-sky-300'
+                measureMode === 'calibrate' ? 'text-amber-300' : measureMode === 'angle' || measureMode === 'height' ? 'text-violet-300' : 'text-sky-300'
               }`}>
                 {measureMode === 'calibrate' && 'Calibrating: click and drag across a known distance'}
                 {measureMode === 'measure' && 'Measuring: click and drag across a known distance'}
                 {measureMode === 'angle' && `Angle: click point ${anglePoints.length + 1} of 3 (ray end, vertex, ray end)`}
+                {measureMode === 'height' && 'Height Calibration: stand with your full body in frame, head to feet'}
               </span>
               <button
                 onClick={() => {

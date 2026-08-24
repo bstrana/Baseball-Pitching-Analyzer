@@ -179,7 +179,7 @@ export default function App() {
   const [calibrationUnit, setCalibrationUnit] = useState<'ft' | 'm'>('ft');
   const [referenceDistanceValue, setReferenceDistanceValue] = useState(60.5); // mound-to-plate default, in calibrationUnit
   const [pixelsPerFoot, setPixelsPerFoot] = useState<number | null>(null);
-  const [measureMode, setMeasureMode] = useState<'none' | 'calibrate' | 'measure' | 'angle'>('none');
+  const [measureMode, setMeasureMode] = useState<'none' | 'calibrate' | 'measure' | 'angle' | 'height'>('none');
   const [lastMeasuredFeet, setLastMeasuredFeet] = useState<number | null>(null);
   const [lastMeasuredAngle, setLastMeasuredAngle] = useState<number | null>(null);
 
@@ -647,6 +647,10 @@ export default function App() {
                  }}
                  onMeasurementComplete={setLastMeasuredFeet}
                  onAngleMeasured={setLastMeasuredAngle}
+                 onHeightCalibrationPixels={(pixelHeight) => {
+                   if (!selectedPlayer?.height_in) return;
+                   setPixelsPerFoot(pixelHeight / (selectedPlayer.height_in / 12));
+                 }}
                  measurementUnit={calibrationUnit}
                  cameraZoom={cameraZoom}
                  onCameraZoomChange={setCameraZoom}
@@ -1367,6 +1371,29 @@ export default function App() {
                           Clear calibration
                         </button>
                       )}
+
+                      <div className="flex items-center gap-2 my-3">
+                        <div className="flex-1 h-px bg-slate-800"></div>
+                        <span className="text-[9px] text-slate-600 uppercase font-bold">or</span>
+                        <div className="flex-1 h-px bg-slate-800"></div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setMeasureMode('height');
+                          setShowSetupModal(false);
+                        }}
+                        disabled={!selectedPlayer?.height_in}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg transition-all cursor-pointer"
+                      >
+                        <User className="w-3.5 h-3.5" />
+                        <span>Calibrate from {selectedPlayer?.name || 'Player'}'s Height</span>
+                      </button>
+                      <p className="text-[10px] text-slate-500 mt-2">
+                        {selectedPlayer?.height_in
+                          ? "Skips drawing a line - stand the pitcher's full body in frame and hold still for a moment."
+                          : 'Set a height for the selected player in the Profile tab to enable this.'}
+                      </p>
                     </div>
 
                     <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
