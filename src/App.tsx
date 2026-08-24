@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import type { PoseMetrics } from './components/PoseDetector';
 import { PitchTracker, PitchLog } from './components/PitchTracker';
+import { PitchVelocityChart } from './components/PitchVelocityChart';
 
 // Lazy-loaded: PoseDetector pulls in @tensorflow/tfjs + pose-detection, and
 // KinematicChart pulls in recharts - both are heavy and only needed once the
@@ -12,7 +13,7 @@ const KinematicChart = lazy(() =>
   import('./components/KinematicChart').then(m => ({ default: m.KinematicChart }))
 );
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb, Play, StopCircle, MapPin, Clock, FileText, DraftingCompass } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb, Play, StopCircle, MapPin, Clock, FileText, DraftingCompass, GripVertical, LayoutPanelTop } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
 import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession, getPlayerSessionCount, getPlayerSessionCounts } from './pocketbase';
@@ -263,6 +264,105 @@ export default function App() {
     window.addEventListener('touchend', onTouchEnd);
   };
 
+  // Dockable Pitch Tracker panels (lg+ only, pitching mode): each panel below
+  // can be dragged by its grip handle into the left sidebar, right sidebar,
+  // or a bottom dock (full width, initially empty) - useful for e.g. giving
+  // the velocity chart the full canvas width once a lot of pitches are
+  // logged and it gets crowded in the narrow sidebar.
+  type DockZone = 'left' | 'right' | 'bottom';
+  type DockWidgetId = 'pitchLog' | 'pitchCalibration' | 'velocityChart';
+  const DOCK_WIDGET_TITLES: Record<DockWidgetId, string> = {
+    pitchLog: 'Session Pitch Log',
+    pitchCalibration: 'Pitch Calibration',
+    velocityChart: 'Velocity Chart',
+  };
+  const [dockLayout, setDockLayout] = useState<Record<DockZone, DockWidgetId[]>>({
+    left: ['pitchLog'],
+    right: ['pitchCalibration', 'velocityChart'],
+    bottom: [],
+  });
+  const [dockDragWidget, setDockDragWidget] = useState<DockWidgetId | null>(null);
+  const [dockHoverZone, setDockHoverZone] = useState<DockZone | null>(null);
+  const dockDragWidgetRef = React.useRef<DockWidgetId | null>(null);
+  const leftDockRef = React.useRef<HTMLDivElement>(null);
+  const rightDockRef = React.useRef<HTMLDivElement>(null);
+  const bottomDockRef = React.useRef<HTMLDivElement>(null);
+  const dockZoneRefs: Record<DockZone, React.RefObject<HTMLDivElement>> = {
+    left: leftDockRef,
+    right: rightDockRef,
+    bottom: bottomDockRef,
+  };
+
+  const findDockZoneUnderPoint = (clientX: number, clientY: number): DockZone | null => {
+    for (const zone of ['left', 'right', 'bottom'] as DockZone[]) {
+      const rect = dockZoneRefs[zone].current?.getBoundingClientRect();
+      if (rect && clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+        return zone;
+      }
+    }
+    return null;
+  };
+
+  const moveDockWidget = (widgetId: DockWidgetId, toZone: DockZone) => {
+    setDockLayout(prev => {
+      if (prev[toZone].includes(widgetId) && prev[toZone][prev[toZone].length - 1] === widgetId) return prev;
+      const next: Record<DockZone, DockWidgetId[]> = {
+        left: prev.left.filter(id => id !== widgetId),
+        right: prev.right.filter(id => id !== widgetId),
+        bottom: prev.bottom.filter(id => id !== widgetId),
+      };
+      next[toZone] = [...next[toZone], widgetId];
+      return next;
+    });
+  };
+
+  const startDockWidgetDrag = (widgetId: DockWidgetId, clientX: number, clientY: number) => {
+    dockDragWidgetRef.current = widgetId;
+    setDockDragWidget(widgetId);
+    setDockHoverZone(findDockZoneUnderPoint(clientX, clientY));
+  };
+
+  const handleDockHandleMouseDown = (widgetId: DockWidgetId) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    startDockWidgetDrag(widgetId, e.clientX, e.clientY);
+
+    const onMove = (ev: MouseEvent) => setDockHoverZone(findDockZoneUnderPoint(ev.clientX, ev.clientY));
+    const onUp = (ev: MouseEvent) => {
+      const zone = findDockZoneUnderPoint(ev.clientX, ev.clientY);
+      if (zone && dockDragWidgetRef.current) moveDockWidget(dockDragWidgetRef.current, zone);
+      dockDragWidgetRef.current = null;
+      setDockDragWidget(null);
+      setDockHoverZone(null);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const handleDockHandleTouchStart = (widgetId: DockWidgetId) => (e: React.TouchEvent) => {
+    if (e.touches.length === 0) return;
+    const touch = e.touches[0];
+    startDockWidgetDrag(widgetId, touch.clientX, touch.clientY);
+
+    const onMove = (ev: TouchEvent) => {
+      if (ev.touches.length === 0) return;
+      setDockHoverZone(findDockZoneUnderPoint(ev.touches[0].clientX, ev.touches[0].clientY));
+    };
+    const onEnd = (ev: TouchEvent) => {
+      const touchPoint = ev.changedTouches[0];
+      const zone = touchPoint ? findDockZoneUnderPoint(touchPoint.clientX, touchPoint.clientY) : null;
+      if (zone && dockDragWidgetRef.current) moveDockWidget(dockDragWidgetRef.current, zone);
+      dockDragWidgetRef.current = null;
+      setDockDragWidget(null);
+      setDockHoverZone(null);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onEnd);
+  };
+
   // Digital camera zoom (1x - 3x), applied as a CSS scale on the video canvas
   const [cameraZoom, setCameraZoom] = useState(1);
 
@@ -479,6 +579,67 @@ export default function App() {
     </div>
   );
 
+  const renderDockWidget = (id: DockWidgetId) => {
+    switch (id) {
+      case 'pitchLog':
+        return (
+          <PitchLog
+            pitches={pitches}
+            onRemovePitch={handleRemovePitch}
+            onClearPitches={handleClearPitches}
+            selectedPitchId={selectedPitchId}
+            setSelectedPitchId={setSelectedPitchId}
+            onToggleBadShape={handleToggleBadShape}
+          />
+        );
+      case 'pitchCalibration':
+        return (
+          <PitchTracker
+            pitches={pitches}
+            config={strikeZoneConfig}
+            onConfigChange={setStrikeZoneConfig}
+            showStrikeZone={showStrikeZone}
+            setShowStrikeZone={setShowStrikeZone}
+            strikeZoneLocked={strikeZoneLocked}
+            setStrikeZoneLocked={setStrikeZoneLocked}
+            showPitchSpeeds={showPitchSpeeds}
+            setShowPitchSpeeds={setShowPitchSpeeds}
+            currentPitchType={currentPitchType}
+            setCurrentPitchType={setCurrentPitchType}
+            currentPitchSpeed={currentPitchSpeed}
+            setCurrentPitchSpeed={setCurrentPitchSpeed}
+            targetMode={targetMode}
+            setTargetMode={setTargetMode}
+            pitcherHandedness={pitcherHandedness}
+            setPitcherHandedness={setPitcherHandedness}
+          />
+        );
+      case 'velocityChart':
+        return <PitchVelocityChart pitches={pitches} showSpeeds={showPitchSpeeds} />;
+    }
+  };
+
+  // Wraps a dock widget with its drag handle strip - grabbing it lets the
+  // coach redock the panel into the left sidebar, right sidebar, or the
+  // bottom dock by dropping it over that zone.
+  const renderDockCard = (id: DockWidgetId) => (
+    <div key={id} className={dockDragWidget === id ? 'opacity-40' : ''}>
+      <div
+        onMouseDown={handleDockHandleMouseDown(id)}
+        onTouchStart={handleDockHandleTouchStart(id)}
+        title={`Drag "${DOCK_WIDGET_TITLES[id]}" to the left sidebar, right sidebar, or bottom dock`}
+        className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 mb-1.5 bg-slate-950/40 border border-slate-800 rounded-lg cursor-grab active:cursor-grabbing touch-none text-slate-500 hover:text-slate-300 hover:border-slate-700 transition-colors select-none"
+      >
+        <GripVertical className="w-3.5 h-3.5 shrink-0" />
+        <span className="text-[9px] font-bold uppercase tracking-widest">{DOCK_WIDGET_TITLES[id]}</span>
+      </div>
+      {renderDockWidget(id)}
+    </div>
+  );
+
+  const dockZoneClass = (zone: DockZone) =>
+    dockHoverZone === zone && dockDragWidget ? 'outline outline-2 outline-sky-500/60 outline-offset-[-2px] bg-sky-950/10' : '';
+
   return (
     <div className="flex flex-col h-viewport w-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
       {/* Edge tab - phone landscape only, toggles the top/bottom bars below
@@ -589,25 +750,29 @@ export default function App() {
         </div>
       </nav>
 
-      <div className="flex flex-1 overflow-hidden flex-col lg:flex-row relative">
+      <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden flex-col lg:flex-row relative min-h-0">
 
-        {/* Left Sidebar: Session Pitch Log - desktop only; on smaller screens
-            it's part of the collapsible right panel instead (no room for a
-            third column) */}
+        {/* Left Dock: Session Pitch Log by default - desktop only; on smaller
+            screens it's part of the collapsible right panel instead (no room
+            for a third column). Panels dragged here from the right dock (see
+            the grip handle on each panel) also land in this column. */}
         {appMode === 'pitching' && (
           <aside
-            className="hidden lg:flex lg:w-[var(--left-sidebar-w)] bg-slate-900 border-r border-slate-800 flex-col shrink-0 overflow-hidden h-full relative"
+            ref={leftDockRef}
+            className={`hidden lg:flex lg:w-[var(--left-sidebar-w)] bg-slate-900 border-r border-slate-800 flex-col shrink-0 overflow-hidden h-full relative transition-colors ${dockZoneClass('left')}`}
             style={{ '--left-sidebar-w': `${leftSidebarWidth}px` } as React.CSSProperties}
           >
             <div className="flex-1 overflow-y-auto p-4 min-h-0">
-              <PitchLog
-                pitches={pitches}
-                onRemovePitch={handleRemovePitch}
-                onClearPitches={handleClearPitches}
-                selectedPitchId={selectedPitchId}
-                setSelectedPitchId={setSelectedPitchId}
-                onToggleBadShape={handleToggleBadShape}
-              />
+              {dockLayout.left.length === 0 ? (
+                <div className={`flex items-center justify-center gap-2 h-14 rounded-lg border-2 border-dashed text-[10px] font-bold uppercase tracking-widest text-center px-3 ${
+                  dockHoverZone === 'left' ? 'border-sky-500/60 text-sky-300' : 'border-slate-800 text-slate-600'
+                }`}>
+                  Drop a panel here
+                </div>
+              ) : (
+                dockLayout.left.map(id => renderDockCard(id))
+              )}
             </div>
             {/* Drag to resize - right edge of this sidebar */}
             <div
@@ -775,9 +940,10 @@ export default function App() {
             in its own column on lg+. On phone landscape that thin bar collapses
             further to 0 height unless mobileChromeExpanded. */}
         <aside
-          className={`w-full lg:w-[var(--right-sidebar-w)] bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex-col shrink-0 overflow-hidden h-auto lg:h-full relative ${
+          ref={rightDockRef}
+          className={`w-full lg:w-[var(--right-sidebar-w)] bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex-col shrink-0 overflow-hidden h-auto lg:h-full relative transition-colors ${
             appMode === 'pitching' ? 'flex' : 'hidden'
-          } ${mobileChromeExpanded ? '' : 'max-lg:landscape:border-t-0'}`}
+          } ${mobileChromeExpanded ? '' : 'max-lg:landscape:border-t-0'} ${dockZoneClass('right')}`}
           style={{ '--right-sidebar-w': `${rightSidebarWidth}px` } as React.CSSProperties}
         >
           {/* Drag to resize - left edge of this sidebar */}
@@ -809,25 +975,15 @@ export default function App() {
               <p className="text-xs text-slate-400 mt-1">Track location, speed, and zone accuracy</p>
             </div>
             <div className="flex-1 overflow-y-auto p-4 min-h-0 max-h-[420px] lg:max-h-none">
-              <PitchTracker
-                pitches={pitches}
-                config={strikeZoneConfig}
-                onConfigChange={setStrikeZoneConfig}
-                showStrikeZone={showStrikeZone}
-                setShowStrikeZone={setShowStrikeZone}
-                strikeZoneLocked={strikeZoneLocked}
-                setStrikeZoneLocked={setStrikeZoneLocked}
-                showPitchSpeeds={showPitchSpeeds}
-                setShowPitchSpeeds={setShowPitchSpeeds}
-                currentPitchType={currentPitchType}
-                setCurrentPitchType={setCurrentPitchType}
-                currentPitchSpeed={currentPitchSpeed}
-                setCurrentPitchSpeed={setCurrentPitchSpeed}
-                targetMode={targetMode}
-                setTargetMode={setTargetMode}
-                pitcherHandedness={pitcherHandedness}
-                setPitcherHandedness={setPitcherHandedness}
-              />
+              {dockLayout.right.length === 0 ? (
+                <div className={`hidden lg:flex items-center justify-center gap-2 h-14 rounded-lg border-2 border-dashed text-[10px] font-bold uppercase tracking-widest text-center px-3 ${
+                  dockHoverZone === 'right' ? 'border-sky-500/60 text-sky-300' : 'border-slate-800 text-slate-600'
+                }`}>
+                  Drop a panel here
+                </div>
+              ) : (
+                dockLayout.right.map(id => renderDockCard(id))
+              )}
 
               {/* Pitch log lives in the left column on lg+; keep it reachable
                   here below lg where there's no room for a third column */}
@@ -845,6 +1001,31 @@ export default function App() {
           </div>
         </aside>
 
+      </div>
+
+      {/* Bottom Dock: empty by default - drag a panel's grip handle here (from
+          the left or right dock) to give it the full canvas width instead of
+          a narrow sidebar column, e.g. the velocity chart once a lot of
+          pitches are logged and it's crowded in the sidebar. Desktop only,
+          same as the left dock. */}
+      {appMode === 'pitching' && (
+        <div
+          ref={bottomDockRef}
+          className={`hidden lg:flex flex-col gap-3 border-t border-slate-800 bg-slate-900/60 shrink-0 overflow-y-auto transition-colors p-3 ${dockZoneClass('bottom')}`}
+          style={{ maxHeight: dockLayout.bottom.length === 0 ? undefined : '42vh' }}
+        >
+          {dockLayout.bottom.length === 0 ? (
+            <div className={`flex items-center justify-center gap-2 h-12 rounded-lg border-2 border-dashed text-[10px] font-bold uppercase tracking-widest transition-colors ${
+              dockHoverZone === 'bottom' ? 'border-sky-500/60 text-sky-300' : 'border-slate-800 text-slate-600'
+            }`}>
+              <LayoutPanelTop className="w-4 h-4" />
+              Drag a panel here to dock it full-width
+            </div>
+          ) : (
+            dockLayout.bottom.map(id => renderDockCard(id))
+          )}
+        </div>
+      )}
       </div>
 
       {/* Setup & Configuration Modal */}
