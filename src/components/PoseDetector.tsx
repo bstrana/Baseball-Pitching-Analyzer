@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn, Maximize, Minimize, MoveDiagonal2 } from 'lucide-react';
+import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn, Maximize, Minimize, MoveDiagonal2, DraftingCompass } from 'lucide-react';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, PITCH_TYPE_INFO, PITCH_TYPES, classifyPitch, classifyMiss, getTargetZoneLabel } from '../types';
 
 // Required to initialize the WebGL backend
@@ -357,6 +357,22 @@ export function PoseDetector({
   const [hasAnalyzed, setHasAnalyzed] = useState(false);
   const hasAnalyzedRef = useRef(false);
   const isAnalyzingRef = useRef(false);
+
+  // Full-resolution right-wrist trail captured during an Analyze sweep (unlike
+  // wristTrajectory below, never capped/decayed) so the complete pitch path can
+  // stay drawn on screen once analysis finishes, plus the peak joint speeds and
+  // max ankle-to-ankle (stride) pixel distance seen during that same sweep.
+  // sweepPeaksRef accumulates live while runAnalysis is running; analysisSummary
+  // is the frozen snapshot shown in the HUD bar once it completes.
+  const analyzedTrajectoryRef = useRef<{ x: number; y: number }[]>([]);
+  const sweepPeaksRef = useRef({ hip: 0, shoulder: 0, elbow: 0, wrist: 0, strideCorePixels: 0 });
+  const [analysisSummary, setAnalysisSummary] = useState<{
+    peakHip: number;
+    peakShoulder: number;
+    peakElbowPx: number;
+    peakWristPx: number;
+    strideCorePixels: number;
+  } | null>(null);
 
   // Fullscreen - most useful on a phone in landscape, where it also hides
   // the browser's own address bar/toolbar, unlike our own on-canvas HUD
@@ -853,6 +869,8 @@ export function PoseDetector({
     setHasAnalyzed(false);
     hasAnalyzedRef.current = false;
     rollingKinematicsRef.current = [];
+    analyzedTrajectoryRef.current = [];
+    setAnalysisSummary(null);
     onMetricsUpdate(ZERO_METRICS);
     onKinematicsUpdateRef.current?.([]);
   };
@@ -865,6 +883,8 @@ export function PoseDetector({
     setHasAnalyzed(false);
     hasAnalyzedRef.current = false;
     rollingKinematicsRef.current = [];
+    analyzedTrajectoryRef.current = [];
+    setAnalysisSummary(null);
     onMetricsUpdate(ZERO_METRICS);
     onKinematicsUpdateRef.current?.([]);
   };
@@ -876,6 +896,8 @@ export function PoseDetector({
     hasAnalyzedRef.current = false;
     setAnalysisProgress(0);
     rollingKinematicsRef.current = [];
+    analyzedTrajectoryRef.current = [];
+    setAnalysisSummary(null);
     onMetricsUpdate(ZERO_METRICS);
     onKinematicsUpdateRef.current?.([]);
     singleFrameAnalyzeRequestedRef.current = true;
@@ -921,6 +943,9 @@ export function PoseDetector({
     speedBufferRef.current = { hip: [], shoulder: [], elbow: [], wrist: [] };
     rollingKinematicsRef.current = [];
     wristTrajectory.current = [];
+    analyzedTrajectoryRef.current = [];
+    sweepPeaksRef.current = { hip: 0, shoulder: 0, elbow: 0, wrist: 0, strideCorePixels: 0 };
+    setAnalysisSummary(null);
     kinematicsEmitCounterRef.current = 0;
 
     const start = rangeStart;
@@ -964,6 +989,17 @@ export function PoseDetector({
     // against the sweep's video-time-domain timestamp.
     lastFrameRef.current = null;
 
+    // Freeze the peak joint speeds and max stride (ankle-to-ankle) distance seen
+    // during the sweep - shown in the HUD bar alongside the persisted trajectory
+    // line until a new range is marked or analysis is re-run.
+    setAnalysisSummary({
+      peakHip: sweepPeaksRef.current.hip,
+      peakShoulder: sweepPeaksRef.current.shoulder,
+      peakElbowPx: sweepPeaksRef.current.elbow,
+      peakWristPx: sweepPeaksRef.current.wrist,
+      strideCorePixels: sweepPeaksRef.current.strideCorePixels
+    });
+
     isAnalyzingRef.current = false;
     setIsAnalyzing(false);
     hasAnalyzedRef.current = true;
@@ -978,6 +1014,19 @@ export function PoseDetector({
       isPausedRef.current = true;
       setIsPaused(true);
     }
+  };
+
+  // Formats a pixel distance (or, for a speed, a pixels/sec rate) from the
+  // Analyze sweep's frozen summary into real-world units when the scene is
+  // calibrated (pixelsPerFoot set), same ft/m convention as the manual
+  // distance measurement tool - otherwise falls back to a labeled raw pixel
+  // value so the stat is still visible before calibrating.
+  const formatCalibratedStat = (pixels: number, isRate: boolean) => {
+    const suffix = isRate ? '/s' : '';
+    if (!pixelsPerFoot) return `${pixels.toFixed(0)} px${suffix}`;
+    const feet = pixels / pixelsPerFoot;
+    if (measurementUnit === 'm') return `${(feet / FEET_PER_METER).toFixed(isRate ? 1 : 2)} m${suffix}`;
+    return `${feet.toFixed(isRate ? 1 : 2)} ft${suffix}`;
   };
 
   const togglePlaybackSpeed = () => {
@@ -1253,6 +1302,20 @@ export function PoseDetector({
         speeds.elbow = avg(speedBufferRef.current.elbow);
         speeds.wrist = avg(speedBufferRef.current.wrist);
 
+        // Track peaks (unthrottled) and the max ankle-to-ankle spread while an
+        // Analyze sweep is running, so the HUD bar can show a frozen summary
+        // once it finishes - see analysisSummary/sweepPeaksRef above.
+        if (isAnalyzingRef.current) {
+          sweepPeaksRef.current.hip = Math.max(sweepPeaksRef.current.hip, speeds.hip);
+          sweepPeaksRef.current.shoulder = Math.max(sweepPeaksRef.current.shoulder, speeds.shoulder);
+          sweepPeaksRef.current.elbow = Math.max(sweepPeaksRef.current.elbow, speeds.elbow);
+          sweepPeaksRef.current.wrist = Math.max(sweepPeaksRef.current.wrist, speeds.wrist);
+          if (rightAnkle && leftAnkle && rightAnkle.score! > 0.3 && leftAnkle.score! > 0.3) {
+            const strideDist = getDistance(rightAnkle.x, rightAnkle.y, leftAnkle.x, leftAnkle.y);
+            sweepPeaksRef.current.strideCorePixels = Math.max(sweepPeaksRef.current.strideCorePixels, strideDist);
+          }
+        }
+
         // Record kinematics in rolling history
         rollingKinematicsRef.current.push({
           hip: speeds.hip,
@@ -1288,8 +1351,29 @@ export function PoseDetector({
       torsoAngle
     };
 
-    // Trajectory Tracking
-    if (showTrajectoryRef.current && appModeRef.current !== 'pitching') {
+    // Trajectory Tracking. While an Analyze sweep is running, every sampled
+    // frame's right-wrist position is also captured unbounded into
+    // analyzedTrajectoryRef (below) regardless of the branch taken here, so
+    // the complete path is available once analysis finishes.
+    if (isAnalyzingRef.current && rightWrist && rightWrist.score && rightWrist.score > 0.4) {
+      analyzedTrajectoryRef.current.push({ x: rightWrist.x, y: rightWrist.y });
+    }
+
+    if (hasAnalyzedRef.current && !isAnalyzingRef.current) {
+      // Analysis just finished (or is showing its last result) - keep the
+      // full swept trajectory drawn as a solid line instead of the live
+      // decaying trail, so the completed pitch's path stays on screen.
+      if (showTrajectoryRef.current && appModeRef.current !== 'pitching' && analyzedTrajectoryRef.current.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(analyzedTrajectoryRef.current[0].x, analyzedTrajectoryRef.current[0].y);
+        for (let i = 1; i < analyzedTrajectoryRef.current.length; i++) {
+          ctx.lineTo(analyzedTrajectoryRef.current[i].x, analyzedTrajectoryRef.current[i].y);
+        }
+        ctx.strokeStyle = '#fbbf24'; // amber-400
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+    } else if (showTrajectoryRef.current && appModeRef.current !== 'pitching') {
       // Default track right wrist
       if (rightWrist && rightWrist.score && rightWrist.score > 0.4) {
         wristTrajectory.current.push({ x: rightWrist.x, y: rightWrist.y });
@@ -2666,15 +2750,15 @@ export function PoseDetector({
   const hudDragStateRef = useRef<{ startClientX: number; startClientY: number; startLeft: number; startTop: number } | null>(null);
   const [hudBarPosition, setHudBarPosition] = useState<{ x: number; y: number } | null>(null);
 
-  // Resizing the same bar via a corner handle - a uniform CSS scale rather
-  // than reflowing the flex layout at a new width, so every control inside
-  // (text, icons, spacing) shrinks/grows together and stays legible instead
-  // of wrapping unpredictably. Anchored at top-left so the grip/position
-  // drag handle above stays put while the opposite corner follows the drag.
-  const HUD_SCALE_MIN = 0.65;
-  const HUD_SCALE_MAX = 1.6;
-  const hudResizeStateRef = useRef<{ startClientX: number; startClientY: number; startScale: number } | null>(null);
-  const [hudBarScale, setHudBarScale] = useState(1);
+  // Resizing the same bar via a corner handle - sets an explicit pixel width
+  // (height stays auto) rather than a uniform CSS scale, so the bar's own
+  // flex layout (marked @container below) genuinely reflows: sections and
+  // buttons keep their natural, legible size and wrap/stack onto new rows as
+  // the bar narrows instead of shrinking below a readable size.
+  const HUD_WIDTH_MIN = 260;
+  const HUD_WIDTH_MAX = 900;
+  const hudResizeStateRef = useRef<{ startClientX: number; startWidth: number } | null>(null);
+  const [hudBarWidth, setHudBarWidth] = useState<number | null>(null);
 
   const moveHudBar = (clientX: number, clientY: number) => {
     const drag = hudDragStateRef.current;
@@ -2745,33 +2829,30 @@ export function PoseDetector({
     window.addEventListener('touchend', onEnd);
   };
 
-  const moveHudBarResize = (clientX: number, clientY: number) => {
+  const moveHudBarResize = (clientX: number) => {
     const resize = hudResizeStateRef.current;
-    const bar = hudBarRef.current;
-    if (!resize || !bar) return;
+    const container = containerRef.current;
+    if (!resize) return;
 
-    // Anchor is the bar's own top-left corner, matching transformOrigin
-    // below - stays fixed as scale changes, so re-reading it fresh here
-    // (rather than caching it at drag-start) is safe and self-correcting.
-    const barRect = bar.getBoundingClientRect();
-    const startDist = Math.hypot(resize.startClientX - barRect.left, resize.startClientY - barRect.top);
-    const currentDist = Math.hypot(clientX - barRect.left, clientY - barRect.top);
-    if (startDist < 1) return;
-
-    const newScale = Math.max(HUD_SCALE_MIN, Math.min(HUD_SCALE_MAX, resize.startScale * (currentDist / startDist)));
-    setHudBarScale(newScale);
+    const maxAllowed = container
+      ? Math.min(HUD_WIDTH_MAX, container.getBoundingClientRect().width - 16)
+      : HUD_WIDTH_MAX;
+    const newWidth = Math.max(HUD_WIDTH_MIN, Math.min(maxAllowed, resize.startWidth + (clientX - resize.startClientX)));
+    setHudBarWidth(newWidth);
   };
 
-  const startHudBarResize = (clientX: number, clientY: number) => {
-    hudResizeStateRef.current = { startClientX: clientX, startClientY: clientY, startScale: hudBarScale };
+  const startHudBarResize = (clientX: number) => {
+    const bar = hudBarRef.current;
+    const startWidth = hudBarWidth ?? bar?.getBoundingClientRect().width ?? HUD_WIDTH_MIN;
+    hudResizeStateRef.current = { startClientX: clientX, startWidth };
   };
 
   const handleHudResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation(); // don't also start a position-drag via the parent handle
-    startHudBarResize(e.clientX, e.clientY);
+    startHudBarResize(e.clientX);
 
-    const onMove = (ev: MouseEvent) => moveHudBarResize(ev.clientX, ev.clientY);
+    const onMove = (ev: MouseEvent) => moveHudBarResize(ev.clientX);
     const onUp = () => {
       hudResizeStateRef.current = null;
       window.removeEventListener('mousemove', onMove);
@@ -2785,11 +2866,11 @@ export function PoseDetector({
     if (e.touches.length === 0) return;
     e.stopPropagation();
     const touch = e.touches[0];
-    startHudBarResize(touch.clientX, touch.clientY);
+    startHudBarResize(touch.clientX);
 
     const onMove = (ev: TouchEvent) => {
       if (ev.touches.length === 0) return;
-      moveHudBarResize(ev.touches[0].clientX, ev.touches[0].clientY);
+      moveHudBarResize(ev.touches[0].clientX);
     };
     const onEnd = () => {
       hudResizeStateRef.current = null;
@@ -3231,6 +3312,22 @@ export function PoseDetector({
               >
                 <Circle className="w-3.5 h-3.5" />
               </button>
+
+              <button
+                onClick={() => {
+                  setActiveDrawTool('none');
+                  onMeasureModeChange?.(measureMode === 'angle' ? 'none' : 'angle');
+                  singleFrameAnalyzeRequestedRef.current = true;
+                }}
+                className={`p-2 rounded-lg border transition-all ${
+                  measureMode === 'angle'
+                    ? 'bg-violet-500/20 border-violet-500/50 text-violet-300'
+                    : 'bg-black/40 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+                title="Angle tool - click a ray end, the vertex, then the other ray end to measure the angle between them"
+              >
+                <DraftingCompass className="w-3.5 h-3.5" />
+              </button>
             </div>
 
             {/* Small divider line */}
@@ -3401,10 +3498,9 @@ export function PoseDetector({
             ref={hudBarRef}
             style={{
               ...(hudBarPosition ? { left: hudBarPosition.x, top: hudBarPosition.y, right: 'auto', bottom: 'auto' } : {}),
-              transform: `scale(${hudBarScale})`,
-              transformOrigin: 'top left',
+              ...(hudBarWidth !== null ? { width: hudBarWidth, right: 'auto' } : {}),
             }}
-            className={`absolute z-20 flex flex-col lg:flex-row items-center justify-between gap-2.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 p-2.5 md:p-3 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] ${
+            className={`absolute z-20 @container flex flex-col @2xl:flex-row items-center justify-between gap-2.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 p-2.5 md:p-3 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] ${
               // bottom-20 here (left from a since-removed mobile bottom tab
               // bar) reserved 80px of clearance nothing needs anymore - on a
               // short landscape phone that's enough to push this bar's own
@@ -3426,18 +3522,18 @@ export function PoseDetector({
               <GripHorizontal className="w-4 h-4" />
             </div>
 
-            {/* Resize handle - drag to scale the whole bar (and everything in
-                it) up or down, double-click/tap to reset to 100%. Uniform
-                CSS scale rather than a width-only resize, so text/icons/
-                spacing all stay proportional and legible at any size instead
-                of the flex layout wrapping unpredictably at odd widths. */}
+            {/* Resize handle - drag horizontally to set the bar's width,
+                double-click/tap to reset to its default responsive width.
+                Sections and buttons keep their natural, legible size and
+                wrap/stack onto new rows as the bar narrows (via the
+                @container query classes below) instead of shrinking. */}
             <div
               onMouseDown={handleHudResizeMouseDown}
               onTouchStart={handleHudResizeTouchStart}
-              onDoubleClick={(e) => { e.stopPropagation(); setHudBarScale(1); }}
+              onDoubleClick={(e) => { e.stopPropagation(); setHudBarWidth(null); }}
               className="absolute -bottom-3 -right-3 w-7 h-7 flex items-center justify-center rounded-full bg-slate-800 border border-slate-700 text-slate-500 hover:text-slate-300 hover:bg-slate-750 shadow-md transition-colors touch-none"
-              style={{ cursor: 'nwse-resize' }}
-              title="Drag to resize (double-click to reset)"
+              style={{ cursor: 'ew-resize' }}
+              title="Drag to resize width (double-click to reset)"
             >
               <MoveDiagonal2 className="w-3.5 h-3.5" />
             </div>
@@ -3445,8 +3541,8 @@ export function PoseDetector({
             {/* Center: Playback controls for Video Sources - camera view alignment and
                 lens switching now live in the off-canvas Settings > Camera tab */}
             {feedSource !== 'camera' && (
-              <div className="flex flex-col gap-2 w-full lg:max-w-md bg-slate-900/85 px-3 py-2 sm:py-1.5 rounded-xl border border-slate-800/80">
-                <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+              <div className="flex flex-col gap-2 w-full @2xl:max-w-md @container bg-slate-900/85 px-3 py-2 sm:py-1.5 rounded-xl border border-slate-800/80">
+                <div className="flex flex-col @sm:flex-row items-center gap-3 w-full">
                   {/* Playback Buttons Group */}
                   <div className="flex items-center gap-1 shrink-0">
                     <button
@@ -3554,11 +3650,39 @@ export function PoseDetector({
                       </button>
                     )}
                   </div>
+
+                  {/* Frozen results from the last completed Analyze sweep - stays
+                      shown (along with the persisted trajectory line on the
+                      canvas) until a new range is marked or Analyze is re-run. */}
+                  {analysisSummary && !isAnalyzing && (
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 w-full pt-1.5 mt-0.5 border-t border-slate-800/70">
+                      <div className="text-center">
+                        <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Peak Hip</p>
+                        <p className="text-xs font-mono text-emerald-300 font-bold leading-none mt-0.5">{analysisSummary.peakHip}°/s</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Peak Shoulder</p>
+                        <p className="text-xs font-mono text-sky-300 font-bold leading-none mt-0.5">{analysisSummary.peakShoulder}°/s</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Peak Elbow</p>
+                        <p className="text-xs font-mono text-amber-300 font-bold leading-none mt-0.5">{formatCalibratedStat(analysisSummary.peakElbowPx, true)}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Peak Wrist</p>
+                        <p className="text-xs font-mono text-rose-300 font-bold leading-none mt-0.5">{formatCalibratedStat(analysisSummary.peakWristPx, true)}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Stride</p>
+                        <p className="text-xs font-mono text-violet-300 font-bold leading-none mt-0.5">{formatCalibratedStat(analysisSummary.strideCorePixels, false)}</p>
+                      </div>
+                    </div>
+                  )}
               </div>
             )}
 
             {/* Right: Operational Actions Row */}
-            <div className="flex items-center justify-center lg:justify-end gap-1.5 w-full lg:w-auto flex-wrap lg:flex-nowrap">
+            <div className="flex items-center justify-center @2xl:justify-end gap-1.5 w-full @2xl:w-auto flex-wrap">
               {/* Record Pitch Button */}
               <button
                 onClick={isRecording ? stopRecording : startRecording}
