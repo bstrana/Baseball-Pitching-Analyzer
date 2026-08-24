@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn, Maximize, Minimize } from 'lucide-react';
+import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn, Maximize, Minimize, MoveDiagonal2 } from 'lucide-react';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, PITCH_TYPE_INFO, PITCH_TYPES, classifyPitch, classifyMiss, getTargetZoneLabel } from '../types';
 
 // Required to initialize the WebGL backend
@@ -2409,6 +2409,16 @@ export function PoseDetector({
   const hudDragStateRef = useRef<{ startClientX: number; startClientY: number; startLeft: number; startTop: number } | null>(null);
   const [hudBarPosition, setHudBarPosition] = useState<{ x: number; y: number } | null>(null);
 
+  // Resizing the same bar via a corner handle - a uniform CSS scale rather
+  // than reflowing the flex layout at a new width, so every control inside
+  // (text, icons, spacing) shrinks/grows together and stays legible instead
+  // of wrapping unpredictably. Anchored at top-left so the grip/position
+  // drag handle above stays put while the opposite corner follows the drag.
+  const HUD_SCALE_MIN = 0.65;
+  const HUD_SCALE_MAX = 1.6;
+  const hudResizeStateRef = useRef<{ startClientX: number; startClientY: number; startScale: number } | null>(null);
+  const [hudBarScale, setHudBarScale] = useState(1);
+
   const moveHudBar = (clientX: number, clientY: number) => {
     const drag = hudDragStateRef.current;
     const bar = hudBarRef.current;
@@ -2471,6 +2481,61 @@ export function PoseDetector({
     };
     const onEnd = () => {
       hudDragStateRef.current = null;
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onEnd);
+  };
+
+  const moveHudBarResize = (clientX: number, clientY: number) => {
+    const resize = hudResizeStateRef.current;
+    const bar = hudBarRef.current;
+    if (!resize || !bar) return;
+
+    // Anchor is the bar's own top-left corner, matching transformOrigin
+    // below - stays fixed as scale changes, so re-reading it fresh here
+    // (rather than caching it at drag-start) is safe and self-correcting.
+    const barRect = bar.getBoundingClientRect();
+    const startDist = Math.hypot(resize.startClientX - barRect.left, resize.startClientY - barRect.top);
+    const currentDist = Math.hypot(clientX - barRect.left, clientY - barRect.top);
+    if (startDist < 1) return;
+
+    const newScale = Math.max(HUD_SCALE_MIN, Math.min(HUD_SCALE_MAX, resize.startScale * (currentDist / startDist)));
+    setHudBarScale(newScale);
+  };
+
+  const startHudBarResize = (clientX: number, clientY: number) => {
+    hudResizeStateRef.current = { startClientX: clientX, startClientY: clientY, startScale: hudBarScale };
+  };
+
+  const handleHudResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation(); // don't also start a position-drag via the parent handle
+    startHudBarResize(e.clientX, e.clientY);
+
+    const onMove = (ev: MouseEvent) => moveHudBarResize(ev.clientX, ev.clientY);
+    const onUp = () => {
+      hudResizeStateRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const handleHudResizeTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 0) return;
+    e.stopPropagation();
+    const touch = e.touches[0];
+    startHudBarResize(touch.clientX, touch.clientY);
+
+    const onMove = (ev: TouchEvent) => {
+      if (ev.touches.length === 0) return;
+      moveHudBarResize(ev.touches[0].clientX, ev.touches[0].clientY);
+    };
+    const onEnd = () => {
+      hudResizeStateRef.current = null;
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onEnd);
     };
@@ -3070,7 +3135,11 @@ export function PoseDetector({
           {/* Bottom Floating Heads-Up Control Bar - draggable via the grip handle */}
           <div
             ref={hudBarRef}
-            style={hudBarPosition ? { left: hudBarPosition.x, top: hudBarPosition.y, right: 'auto', bottom: 'auto' } : undefined}
+            style={{
+              ...(hudBarPosition ? { left: hudBarPosition.x, top: hudBarPosition.y, right: 'auto', bottom: 'auto' } : {}),
+              transform: `scale(${hudBarScale})`,
+              transformOrigin: 'top left',
+            }}
             className={`absolute z-20 flex flex-col lg:flex-row items-center justify-between gap-2.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 p-2.5 md:p-3 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] ${
               // bottom-20 here (left from a since-removed mobile bottom tab
               // bar) reserved 80px of clearance nothing needs anymore - on a
@@ -3091,6 +3160,22 @@ export function PoseDetector({
               title="Drag to reposition (double-click to reset)"
             >
               <GripHorizontal className="w-4 h-4" />
+            </div>
+
+            {/* Resize handle - drag to scale the whole bar (and everything in
+                it) up or down, double-click/tap to reset to 100%. Uniform
+                CSS scale rather than a width-only resize, so text/icons/
+                spacing all stay proportional and legible at any size instead
+                of the flex layout wrapping unpredictably at odd widths. */}
+            <div
+              onMouseDown={handleHudResizeMouseDown}
+              onTouchStart={handleHudResizeTouchStart}
+              onDoubleClick={(e) => { e.stopPropagation(); setHudBarScale(1); }}
+              className="absolute -bottom-3 -right-3 w-7 h-7 flex items-center justify-center rounded-full bg-slate-800 border border-slate-700 text-slate-500 hover:text-slate-300 hover:bg-slate-750 shadow-md transition-colors touch-none"
+              style={{ cursor: 'nwse-resize' }}
+              title="Drag to resize (double-click to reset)"
+            >
+              <MoveDiagonal2 className="w-3.5 h-3.5" />
             </div>
 
             {/* Center: Playback controls for Video Sources - camera view alignment and
