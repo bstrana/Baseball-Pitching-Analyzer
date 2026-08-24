@@ -1,3 +1,18 @@
+## 1.2.12
+
+* The floating video control bar's resize handle now sets an explicit
+  width instead of a uniform zoom, so its sections and buttons stack
+  onto new rows as it's narrowed instead of shrinking below a legible
+  size.
+* Finishing an Analyze sweep on an uploaded/replayed video now keeps
+  that pitch's trajectory line drawn on screen instead of letting it
+  decay, and the control bar shows a summary of peak hip, shoulder,
+  elbow, and wrist speeds plus a stride (foot-to-foot) distance -
+  in real-world units once distance is calibrated.
+* Added an Angle tool to the on-canvas drawing tools panel, alongside
+  the pencil/line/arrow/circle tools - click three points to read the
+  angle between them without opening Session Setup.
+
 ## 1.2.11
 
 * Added a manual angle tool (Session Setup > Calibration > Measure Angle):
