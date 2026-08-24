@@ -1,3 +1,28 @@
+## 1.2.13
+
+* Fixed the drawing panel's Undo (Ctrl+Z) and Clear buttons doing
+  nothing when an angle measurement was the only thing on screen -
+  they only ever checked for regular strokes/lines, so they stayed
+  disabled instead of removing the angle.
+* Added inches as a measurement unit alongside feet and meters, for
+  baseball-scale distances (stride length, release point height) that
+  are awkward as a fraction of a foot.
+* Added a manual "draw a line from head to feet" calibration option
+  using the selected player's recorded height as the reference
+  distance - useful when the existing automatic pose-detected version
+  can't get a clean read.
+* The per-pitch-type breakdown on the video canvas now also shows
+  average velocity for each type, next to its max.
+* The Pitch Tracker sidebar's chart now depends on the Speed On/Off
+  toggle: velocity-per-pitch line with an average reference line when
+  speed is on, or a strikes-vs-balls breakdown by pitch type when it's
+  off (velocity isn't tracked in that mode).
+* The Session Pitch Log, Pitch Calibration, and Velocity Chart panels
+  can now be dragged (via a new grip handle) between the left sidebar,
+  right sidebar, or a new bottom dock - drop the velocity chart at the
+  bottom, for example, to view it full-width once a lot of pitches
+  have been logged. The bottom dock is empty by default.
+
 ## 1.2.12
 
 * The floating video control bar's resize handle now sets an explicit
