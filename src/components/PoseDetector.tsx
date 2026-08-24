@@ -232,17 +232,19 @@ export function PoseDetector({
   // only types that have actually been thrown, most-thrown first.
   const pitchStatsByType = Object.entries(
     pitches.reduce((acc, p) => {
-      if (!acc[p.type]) acc[p.type] = { count: 0, strikes: 0, maxVelo: 0 };
+      if (!acc[p.type]) acc[p.type] = { count: 0, strikes: 0, totalVelo: 0, maxVelo: 0 };
       acc[p.type].count += 1;
       if (p.isStrike) acc[p.type].strikes += 1;
+      acc[p.type].totalVelo += p.velocity;
       acc[p.type].maxVelo = Math.max(acc[p.type].maxVelo, p.velocity);
       return acc;
-    }, {} as Record<string, { count: number; strikes: number; maxVelo: number }>)
+    }, {} as Record<string, { count: number; strikes: number; totalVelo: number; maxVelo: number }>)
   )
     .map(([type, s]) => ({
       type: type as PitchType,
       count: s.count,
       strikePercentage: Math.round((s.strikes / s.count) * 100),
+      avgVelo: Math.round(s.totalVelo / s.count),
       maxVelo: s.maxVelo,
     }))
     .sort((a, b) => b.count - a.count);
@@ -3455,8 +3457,8 @@ export function PoseDetector({
 
           {/* Same breakdown per pitch type, listed under the totals above */}
           {appMode === 'pitching' && pitchStatsByType.length > 0 && (
-            <div className="bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg px-2 py-1.5 min-w-[168px]">
-              {pitchStatsByType.map(({ type, count, strikePercentage, maxVelo }) => (
+            <div className="bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg px-2 py-1.5 min-w-[196px]">
+              {pitchStatsByType.map(({ type, count, strikePercentage, avgVelo, maxVelo }) => (
                 <div key={type} className="flex items-center gap-2 text-[9px] font-mono py-0.5">
                   <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getPitchTypeColor(type) }} />
                   <span className="text-slate-300 font-sans font-semibold uppercase tracking-wide flex-1 truncate">{type}</span>
@@ -3466,7 +3468,8 @@ export function PoseDetector({
                   }`}>
                     {strikePercentage}%
                   </span>
-                  <span className="text-sky-400 font-bold w-9 text-right">{maxVelo}mph</span>
+                  <span className="text-slate-300 font-bold w-8 text-right" title="Average velocity">{avgVelo}</span>
+                  <span className="text-sky-400 font-bold w-9 text-right" title="Max velocity">{maxVelo}mph</span>
                 </div>
               ))}
             </div>

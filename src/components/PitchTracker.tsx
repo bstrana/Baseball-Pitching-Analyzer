@@ -150,10 +150,10 @@ function PitchTrackerBase({
         </div>
       </div>
 
-      {/* Velocity trend - pitch location is already plotted live on the
-          video canvas itself, so this panel shows something that isn't:
-          how velocity holds up across the outing */}
-      <PitchVelocityChart pitches={pitches} />
+      {/* Velocity trend (Speed on) or strike/ball mix by type (Speed off) -
+          pitch location is already plotted live on the video canvas itself,
+          so this panel shows something that isn't */}
+      <PitchVelocityChart pitches={pitches} showSpeeds={showPitchSpeeds} />
 
       {/* Pitch Velocity & Zone Calibration */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
