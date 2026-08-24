@@ -676,22 +676,31 @@ export function PoseDetector({
     }
   }, [uvcDeviceId, uvcWidth, uvcHeight, uvcFrameRate]);
 
-  // Start recording the video feed
+  // Start recording the video feed. Always captures the canvas (not the raw
+  // camera/video stream directly) since every overlay - skeleton, strike
+  // zone, pitch markers, trajectory, HUD stats - is drawn there each frame
+  // (see the ctx.drawImage(video, ...) calls in the render loop below);
+  // capturing the raw camera stream instead, as this used to do for a live
+  // feed, produced a recording with none of that baked in - on a phone,
+  // where the live camera is by far the most common source, that meant
+  // every Pitch Tracker recording came out with no strike zone or pitch
+  // markers at all.
   const startRecording = () => {
     if (!videoRef.current) return;
     let stream: MediaStream | null = null;
 
-    if (feedSource === 'camera' && videoRef.current.srcObject) {
-      stream = videoRef.current.srcObject as MediaStream;
-    } else {
-      // Fallback: capture from the canvas element so they can record skeleton overlay
-      if (canvasRef.current) {
-        try {
-          stream = (canvasRef.current as any).captureStream(30);
-        } catch (e) {
-          console.error("Canvas captureStream failed:", e);
-        }
+    if (canvasRef.current) {
+      try {
+        stream = (canvasRef.current as any).captureStream(30);
+      } catch (e) {
+        console.error("Canvas captureStream failed:", e);
       }
+    }
+
+    // Fallback only if canvas capture itself is unsupported - better to
+    // record the raw feed (no overlay) than nothing at all.
+    if (!stream && feedSource === 'camera' && videoRef.current.srcObject) {
+      stream = videoRef.current.srcObject as MediaStream;
     }
 
     if (!stream) {
