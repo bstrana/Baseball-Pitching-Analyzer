@@ -1,7 +1,6 @@
 import React from 'react';
 import { Pitch, PitchType, PitchCategory, StrikeZoneConfig, PitcherHandedness, PITCH_TYPE_INFO, PITCH_TYPES } from '../types';
 import { Target, Trash2, Gauge, RotateCcw, Sliders, Eye, EyeOff, Lock, Unlock, Crosshair, Flag, RefreshCw } from 'lucide-react';
-import { PitchVelocityChart } from './PitchVelocityChart';
 
 // Shared between the type selector and the pitch log table below - see
 // PITCH_TYPE_INFO in types.ts for the abbreviation/category/color backing
@@ -149,11 +148,6 @@ function PitchTrackerBase({
           })}
         </div>
       </div>
-
-      {/* Velocity trend - pitch location is already plotted live on the
-          video canvas itself, so this panel shows something that isn't:
-          how velocity holds up across the outing */}
-      <PitchVelocityChart pitches={pitches} />
 
       {/* Pitch Velocity & Zone Calibration */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
