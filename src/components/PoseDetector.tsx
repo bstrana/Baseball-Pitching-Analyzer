@@ -65,6 +65,16 @@ class OneEuroFilter {
 
 const FEET_PER_METER = 3.28084;
 
+// Formats a distance already in feet into the display unit, including inches -
+// useful for baseball-scale measurements (stride length, release point height)
+// that are awkward as a fraction of a foot. isRate appends "/s" for a speed.
+const formatFeetInUnit = (feet: number, unit: 'ft' | 'in' | 'm', isRate: boolean = false): string => {
+  const suffix = isRate ? '/s' : '';
+  if (unit === 'in') return `${(feet * 12).toFixed(1)} in${suffix}`;
+  if (unit === 'm') return `${(feet / FEET_PER_METER).toFixed(isRate ? 1 : 2)} m${suffix}`;
+  return `${feet.toFixed(isRate ? 1 : 2)} ft${suffix}`;
+};
+
 const getPitchTypeColor = (type: PitchType): string => PITCH_TYPE_INFO[type].hexColor;
 
 export interface PoseMetrics {
@@ -135,7 +145,7 @@ interface PoseDetectorProps {
   // a confident full-body frame appears; the caller divides by the player's
   // real height to get the scale.
   onHeightCalibrationPixels?: (pixelHeight: number) => void;
-  measurementUnit?: 'ft' | 'm';
+  measurementUnit?: 'ft' | 'in' | 'm';
 
   // Digital camera zoom (1x - 3x) applied as a CSS scale on the video canvas.
   // Adjusted from the on-canvas HUD bar (not a modal) so the live feed stays
@@ -232,17 +242,19 @@ export function PoseDetector({
   // only types that have actually been thrown, most-thrown first.
   const pitchStatsByType = Object.entries(
     pitches.reduce((acc, p) => {
-      if (!acc[p.type]) acc[p.type] = { count: 0, strikes: 0, maxVelo: 0 };
+      if (!acc[p.type]) acc[p.type] = { count: 0, strikes: 0, totalVelo: 0, maxVelo: 0 };
       acc[p.type].count += 1;
       if (p.isStrike) acc[p.type].strikes += 1;
+      acc[p.type].totalVelo += p.velocity;
       acc[p.type].maxVelo = Math.max(acc[p.type].maxVelo, p.velocity);
       return acc;
-    }, {} as Record<string, { count: number; strikes: number; maxVelo: number }>)
+    }, {} as Record<string, { count: number; strikes: number; totalVelo: number; maxVelo: number }>)
   )
     .map(([type, s]) => ({
       type: type as PitchType,
       count: s.count,
       strikePercentage: Math.round((s.strikes / s.count) * 100),
+      avgVelo: Math.round(s.totalVelo / s.count),
       maxVelo: s.maxVelo,
     }))
     .sort((a, b) => b.count - a.count);
@@ -1017,16 +1029,13 @@ export function PoseDetector({
   };
 
   // Formats a pixel distance (or, for a speed, a pixels/sec rate) from the
-  // Analyze sweep's frozen summary into real-world units when the scene is
-  // calibrated (pixelsPerFoot set), same ft/m convention as the manual
-  // distance measurement tool - otherwise falls back to a labeled raw pixel
-  // value so the stat is still visible before calibrating.
+  // Analyze sweep's frozen summary into the display unit (including inches)
+  // when the scene is calibrated (pixelsPerFoot set) - otherwise falls back
+  // to a labeled raw pixel value so the stat is still visible before
+  // calibrating.
   const formatCalibratedStat = (pixels: number, isRate: boolean) => {
-    const suffix = isRate ? '/s' : '';
-    if (!pixelsPerFoot) return `${pixels.toFixed(0)} px${suffix}`;
-    const feet = pixels / pixelsPerFoot;
-    if (measurementUnit === 'm') return `${(feet / FEET_PER_METER).toFixed(isRate ? 1 : 2)} m${suffix}`;
-    return `${feet.toFixed(isRate ? 1 : 2)} ft${suffix}`;
+    if (!pixelsPerFoot) return `${pixels.toFixed(0)} px${isRate ? '/s' : ''}`;
+    return formatFeetInUnit(pixels / pixelsPerFoot, measurementUnit, isRate);
   };
 
   const togglePlaybackSpeed = () => {
@@ -1898,10 +1907,7 @@ export function PoseDetector({
     if (measureModeRef.current === 'calibrate') {
       label = `${pixelDistance.toFixed(0)} px`;
     } else if (pixelsPerFootRef.current) {
-      const feet = pixelDistance / pixelsPerFootRef.current;
-      label = measurementUnitRef.current === 'm'
-        ? `${(feet / FEET_PER_METER).toFixed(2)} m`
-        : `${feet.toFixed(2)} ft`;
+      label = formatFeetInUnit(pixelDistance / pixelsPerFootRef.current, measurementUnitRef.current);
     } else {
       label = `${pixelDistance.toFixed(0)} px (not calibrated)`;
     }
@@ -1998,13 +2004,32 @@ export function PoseDetector({
     ctx.restore();
   };
 
+  // A completed/in-progress angle measurement isn't part of the drawings[]
+  // array (it's its own overlay, kept until explicitly cleared/reused - see
+  // the angle state above), so Undo/Clear need to check it separately or
+  // they'd stay disabled and no-op whenever only an angle was on screen.
   const undoDrawing = () => {
+    if (anglePointsRef.current.length > 0) {
+      // Still placing points - undo removes just the last click.
+      setAnglePoints(prev => prev.slice(0, -1));
+      singleFrameAnalyzeRequestedRef.current = true;
+      return;
+    }
+    if (angleResultRef.current) {
+      // Completed measurement - undo clears it so the tool can be reused.
+      setAngleResult(null);
+      singleFrameAnalyzeRequestedRef.current = true;
+      return;
+    }
     setDrawings(prev => prev.slice(0, -1));
     singleFrameAnalyzeRequestedRef.current = true;
   };
 
   const clearDrawings = () => {
     setDrawings([]);
+    setAnglePoints([]);
+    setAngleHoverPoint(null);
+    setAngleResult(null);
     singleFrameAnalyzeRequestedRef.current = true;
   };
 
@@ -3368,18 +3393,18 @@ export function PoseDetector({
             <div className="flex flex-row sm:flex-col gap-1.5">
               <button
                 onClick={undoDrawing}
-                disabled={drawings.length === 0}
+                disabled={drawings.length === 0 && anglePoints.length === 0 && !angleResult}
                 className={`p-2 rounded-lg border border-slate-800 bg-black/40 text-slate-400 hover:text-white hover:bg-slate-900 transition-all disabled:opacity-30 disabled:pointer-events-none`}
-                title="Undo last stroke/line (Ctrl+Z)"
+                title="Undo last stroke/line/angle point (Ctrl+Z)"
               >
                 <Undo2 className="w-3.5 h-3.5" />
               </button>
 
               <button
                 onClick={clearDrawings}
-                disabled={drawings.length === 0}
+                disabled={drawings.length === 0 && anglePoints.length === 0 && !angleResult}
                 className={`p-2 rounded-lg border border-slate-800 bg-black/40 text-slate-400 hover:text-red-400 hover:bg-red-950/20 hover:border-red-500/30 transition-all disabled:opacity-30 disabled:pointer-events-none`}
-                title="Clear all screen drawings"
+                title="Clear all screen drawings and any angle measurement"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -3455,8 +3480,8 @@ export function PoseDetector({
 
           {/* Same breakdown per pitch type, listed under the totals above */}
           {appMode === 'pitching' && pitchStatsByType.length > 0 && (
-            <div className="bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg px-2 py-1.5 min-w-[168px]">
-              {pitchStatsByType.map(({ type, count, strikePercentage, maxVelo }) => (
+            <div className="bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg px-2 py-1.5 min-w-[196px]">
+              {pitchStatsByType.map(({ type, count, strikePercentage, avgVelo, maxVelo }) => (
                 <div key={type} className="flex items-center gap-2 text-[9px] font-mono py-0.5">
                   <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getPitchTypeColor(type) }} />
                   <span className="text-slate-300 font-sans font-semibold uppercase tracking-wide flex-1 truncate">{type}</span>
@@ -3466,7 +3491,8 @@ export function PoseDetector({
                   }`}>
                     {strikePercentage}%
                   </span>
-                  <span className="text-sky-400 font-bold w-9 text-right">{maxVelo}mph</span>
+                  <span className="text-slate-300 font-bold w-8 text-right" title="Average velocity">{avgVelo}</span>
+                  <span className="text-sky-400 font-bold w-9 text-right" title="Max velocity">{maxVelo}mph</span>
                 </div>
               ))}
             </div>

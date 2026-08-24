@@ -21,6 +21,15 @@ import { CameraCapabilities, RESOLUTION_PRESETS, FRAME_RATE_PRESETS, listVideoIn
 
 const FEET_PER_METER = 3.28084;
 
+// Converts a value in one calibration unit to feet (the canonical unit
+// pixelsPerFoot/lastMeasuredFeet are always stored in) and back.
+const toFeet = (value: number, unit: 'ft' | 'in' | 'm'): number =>
+  unit === 'in' ? value / 12 : unit === 'm' ? value * FEET_PER_METER : value;
+const fromFeet = (feet: number, unit: 'ft' | 'in' | 'm'): number =>
+  unit === 'in' ? feet * 12 : unit === 'm' ? feet / FEET_PER_METER : feet;
+const formatFeet = (feet: number, unit: 'ft' | 'in' | 'm'): string =>
+  unit === 'in' ? `${fromFeet(feet, unit).toFixed(1)} in` : `${fromFeet(feet, unit).toFixed(2)} ${unit}`;
+
 export default function App() {
   const [showSetupModal, setShowSetupModal] = useState(false);
   const [activeModalTab, setActiveModalTab] = useState<'profile' | 'camera' | 'overlays' | 'calibration' | 'guide'>('profile');
@@ -177,12 +186,18 @@ export default function App() {
   // scale to measure any other on-screen distance. pixelsPerFoot and
   // lastMeasuredFeet are always stored in feet as the canonical unit;
   // calibrationUnit only controls how values are entered/displayed.
-  const [calibrationUnit, setCalibrationUnit] = useState<'ft' | 'm'>('ft');
+  const [calibrationUnit, setCalibrationUnit] = useState<'ft' | 'in' | 'm'>('ft');
   const [referenceDistanceValue, setReferenceDistanceValue] = useState(60.5); // mound-to-plate default, in calibrationUnit
   const [pixelsPerFoot, setPixelsPerFoot] = useState<number | null>(null);
   const [measureMode, setMeasureMode] = useState<'none' | 'calibrate' | 'measure' | 'angle' | 'height'>('none');
   const [lastMeasuredFeet, setLastMeasuredFeet] = useState<number | null>(null);
   const [lastMeasuredAngle, setLastMeasuredAngle] = useState<number | null>(null);
+  // Set right before entering 'calibrate' mode from the "draw a line from
+  // head to feet" button below, so the completion handler uses the
+  // selected player's known height as the reference distance instead of
+  // the manually-entered one - null means "use referenceDistanceValue" as
+  // normal (the manual reference-distance calibration flow).
+  const [calibrationReferenceFeetOverride, setCalibrationReferenceFeetOverride] = useState<number | null>(null);
 
   const [metrics, setMetrics] = useState<PoseMetrics>({ 
     rightArmAngle: 0, 
@@ -600,7 +615,7 @@ export default function App() {
           />
         );
       case 'velocityChart':
-        return <PitchVelocityChart pitches={pitches} />;
+        return <PitchVelocityChart pitches={pitches} showSpeeds={showPitchSpeeds} />;
     }
   };
 
@@ -807,8 +822,9 @@ export default function App() {
                  onMeasureModeChange={setMeasureMode}
                  pixelsPerFoot={pixelsPerFoot}
                  onCalibrationPixelDistance={(pixelDistance) => {
-                   const referenceDistanceFeet = calibrationUnit === 'ft' ? referenceDistanceValue : referenceDistanceValue * FEET_PER_METER;
+                   const referenceDistanceFeet = calibrationReferenceFeetOverride ?? toFeet(referenceDistanceValue, calibrationUnit);
                    setPixelsPerFoot(pixelDistance / referenceDistanceFeet);
+                   setCalibrationReferenceFeetOverride(null);
                  }}
                  onMeasurementComplete={setLastMeasuredFeet}
                  onAngleMeasured={setLastMeasuredAngle}
@@ -1471,32 +1487,22 @@ export default function App() {
                       <div className="flex items-center justify-between mb-1">
                         <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Distance Calibration</h4>
                         <div className="flex items-center bg-slate-800/80 rounded-lg border border-slate-700/60 p-0.5">
-                          <button
-                            onClick={() => {
-                              if (calibrationUnit !== 'ft') {
-                                setReferenceDistanceValue(v => Math.round(v * FEET_PER_METER * 100) / 100);
-                                setCalibrationUnit('ft');
-                              }
-                            }}
-                            className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-colors cursor-pointer ${
-                              calibrationUnit === 'ft' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                            }`}
-                          >
-                            US (ft)
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (calibrationUnit !== 'm') {
-                                setReferenceDistanceValue(v => Math.round(v / FEET_PER_METER * 100) / 100);
-                                setCalibrationUnit('m');
-                              }
-                            }}
-                            className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-colors cursor-pointer ${
-                              calibrationUnit === 'm' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                            }`}
-                          >
-                            Metric (m)
-                          </button>
+                          {(['ft', 'in', 'm'] as const).map((unit) => (
+                            <button
+                              key={unit}
+                              onClick={() => {
+                                if (calibrationUnit !== unit) {
+                                  setReferenceDistanceValue(v => Math.round(fromFeet(toFeet(v, calibrationUnit), unit) * 100) / 100);
+                                  setCalibrationUnit(unit);
+                                }
+                              }}
+                              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-colors cursor-pointer ${
+                                calibrationUnit === unit ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                              }`}
+                            >
+                              {unit === 'ft' ? 'US (ft)' : unit === 'in' ? 'Inches' : 'Metric (m)'}
+                            </button>
+                          ))}
                         </div>
                       </div>
                       <p className="text-[11px] text-slate-400 mb-4">
@@ -1507,7 +1513,7 @@ export default function App() {
 
                       <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60 mb-3">
                         <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1.5">
-                          Reference Distance ({calibrationUnit === 'ft' ? 'feet' : 'meters'})
+                          Reference Distance ({calibrationUnit === 'ft' ? 'feet' : calibrationUnit === 'in' ? 'inches' : 'meters'})
                         </label>
                         <input
                           type="number"
@@ -1526,15 +1532,14 @@ export default function App() {
                         <Ruler className="w-4 h-4 shrink-0" />
                         <span className="text-[11px] font-mono">
                           {pixelsPerFoot
-                            ? calibrationUnit === 'ft'
-                              ? `Calibrated - ${pixelsPerFoot.toFixed(1)} px/ft`
-                              : `Calibrated - ${(pixelsPerFoot * FEET_PER_METER).toFixed(1)} px/m`
+                            ? `Calibrated - ${(pixelsPerFoot / fromFeet(1, calibrationUnit)).toFixed(1)} px/${calibrationUnit}`
                             : 'Not calibrated yet'}
                         </span>
                       </div>
 
                       <button
                         onClick={() => {
+                          setCalibrationReferenceFeetOverride(null);
                           setMeasureMode('calibrate');
                           setShowSetupModal(false);
                         }}
@@ -1561,6 +1566,25 @@ export default function App() {
 
                       <button
                         onClick={() => {
+                          if (!selectedPlayer?.height_in) return;
+                          setCalibrationReferenceFeetOverride(selectedPlayer.height_in / 12);
+                          setMeasureMode('calibrate');
+                          setShowSetupModal(false);
+                        }}
+                        disabled={!selectedPlayer?.height_in}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg transition-all cursor-pointer"
+                      >
+                        <Ruler className="w-3.5 h-3.5" />
+                        <span>Draw Line from {selectedPlayer?.name || 'Player'}'s Head to Feet</span>
+                      </button>
+                      <p className="text-[10px] text-slate-500 mt-2 mb-3">
+                        {selectedPlayer?.height_in
+                          ? "For when the automatic option below can't get a clean read - draw a line from the top of the head to the bottom of the feet yourself."
+                          : 'Set a height for the selected player in the Profile tab to enable this.'}
+                      </p>
+
+                      <button
+                        onClick={() => {
                           setMeasureMode('height');
                           setShowSetupModal(false);
                         }}
@@ -1568,11 +1592,11 @@ export default function App() {
                         className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg transition-all cursor-pointer"
                       >
                         <User className="w-3.5 h-3.5" />
-                        <span>Calibrate from {selectedPlayer?.name || 'Player'}'s Height</span>
+                        <span>Auto-Detect from {selectedPlayer?.name || 'Player'}'s Height</span>
                       </button>
                       <p className="text-[10px] text-slate-500 mt-2">
                         {selectedPlayer?.height_in
-                          ? "Skips drawing a line - stand the pitcher's full body in frame and hold still for a moment."
+                          ? "Skips drawing anything - stand the pitcher's full body in frame and hold still for a moment."
                           : 'Set a height for the selected player in the Profile tab to enable this.'}
                       </p>
                     </div>
@@ -1598,11 +1622,7 @@ export default function App() {
 
                       {lastMeasuredFeet !== null && (
                         <p className="text-[11px] text-slate-400 mt-3 font-mono">
-                          Last measurement: <span className="text-sky-400 font-bold">
-                            {calibrationUnit === 'ft'
-                              ? `${lastMeasuredFeet.toFixed(2)} ft`
-                              : `${(lastMeasuredFeet / FEET_PER_METER).toFixed(2)} m`}
-                          </span>
+                          Last measurement: <span className="text-sky-400 font-bold">{formatFeet(lastMeasuredFeet, calibrationUnit)}</span>
                         </p>
                       )}
                     </div>
