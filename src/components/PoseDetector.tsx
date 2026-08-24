@@ -11,6 +11,58 @@ const getDistance = (x1: number, y1: number, x2: number, y2: number) => {
   return Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
 };
 
+// One Euro Filter (Casiez, Roussel, Vogel 2012) - smooths a noisy 1D signal
+// adaptively: heavy smoothing while the signal is nearly still (killing
+// jitter), automatically backing off as it speeds up (so it doesn't lag
+// behind real fast motion). Used below to stabilize raw per-frame keypoint
+// positions from MoveNet, which has no temporal smoothing of its own - every
+// frame is an independent estimate, so a perfectly still subject still shows
+// a few pixels of random jitter per joint without this.
+class OneEuroFilter {
+  private minCutoff: number;
+  private beta: number;
+  private dCutoff: number;
+  private prevX: number | null = null;
+  private prevDx = 0;
+  private prevT: number | null = null;
+
+  // Defaults match the values from the original paper/reference
+  // implementation (tuned for on-screen pixel-coordinate signals, which is
+  // the same order of magnitude as keypoint coordinates here) - untested
+  // against a real noisy camera feed in this environment, so may need
+  // retuning: raise beta if fast pitching motion looks laggy/smeared, lower
+  // minCutoff if there's still visible jitter at rest.
+  constructor(minCutoff = 1.0, beta = 0.007, dCutoff = 1.0) {
+    this.minCutoff = minCutoff;
+    this.beta = beta;
+    this.dCutoff = dCutoff;
+  }
+
+  private alpha(cutoff: number, dt: number) {
+    const tau = 1 / (2 * Math.PI * cutoff);
+    return 1 / (1 + tau / dt);
+  }
+
+  filter(x: number, tMs: number): number {
+    if (this.prevT === null || this.prevX === null) {
+      this.prevT = tMs;
+      this.prevX = x;
+      return x;
+    }
+    const dt = Math.max((tMs - this.prevT) / 1000, 1 / 240); // seconds, floor avoids div-by-~0 on duplicate timestamps
+    this.prevT = tMs;
+
+    const dx = (x - this.prevX) / dt;
+    const edx = this.prevDx + this.alpha(this.dCutoff, dt) * (dx - this.prevDx);
+    this.prevDx = edx;
+
+    const cutoff = this.minCutoff + this.beta * Math.abs(edx);
+    const result = this.prevX + this.alpha(cutoff, dt) * (x - this.prevX);
+    this.prevX = result;
+    return result;
+  }
+}
+
 const FEET_PER_METER = 3.28084;
 
 const getPitchTypeColor = (type: PitchType): string => PITCH_TYPE_INFO[type].hexColor;
@@ -71,12 +123,18 @@ interface PoseDetectorProps {
   appMode?: 'mechanics' | 'pitching';
   onConfigChange?: (config: StrikeZoneConfig) => void;
 
-  // Distance calibration & measurement
-  measureMode?: 'none' | 'calibrate' | 'measure';
-  onMeasureModeChange?: (mode: 'none' | 'calibrate' | 'measure') => void;
+  // Distance calibration & measurement, and manual angle measurement
+  measureMode?: 'none' | 'calibrate' | 'measure' | 'angle' | 'height';
+  onMeasureModeChange?: (mode: 'none' | 'calibrate' | 'measure' | 'angle' | 'height') => void;
   pixelsPerFoot?: number | null;
   onCalibrationPixelDistance?: (pixelDistance: number) => void;
   onMeasurementComplete?: (feet: number) => void;
+  onAngleMeasured?: (angleDegrees: number) => void;
+  // Calibrates pixelsPerFoot from the pitcher's known height instead of a
+  // hand-drawn line - reports the estimated standing-height pixel span once
+  // a confident full-body frame appears; the caller divides by the player's
+  // real height to get the scale.
+  onHeightCalibrationPixels?: (pixelHeight: number) => void;
   measurementUnit?: 'ft' | 'm';
 
   // Digital camera zoom (1x - 3x) applied as a CSS scale on the video canvas.
@@ -148,6 +206,8 @@ export function PoseDetector({
   pixelsPerFoot,
   onCalibrationPixelDistance,
   onMeasurementComplete,
+  onAngleMeasured,
+  onHeightCalibrationPixels,
   measurementUnit = 'ft',
   cameraZoom = 1,
   onCameraZoomChange,
@@ -226,6 +286,10 @@ export function PoseDetector({
   const speedBufferRef = useRef<{hip: number[], shoulder: number[], elbow: number[], wrist: number[]}>({
     hip: [], shoulder: [], elbow: [], wrist: []
   });
+  // One filter pair (x, y) per named keypoint, created lazily and reused
+  // across frames - see OneEuroFilter above for why (kills per-frame jitter
+  // from MoveNet's lack of temporal smoothing without lagging real motion).
+  const keypointFiltersRef = useRef<Map<string, { x: OneEuroFilter; y: OneEuroFilter }>>(new Map());
 
   // Dynamic references to avoid stale closures in the high-frequency animation loop
   const strikeZoneConfigRef = useRef(strikeZoneConfig);
@@ -353,6 +417,19 @@ export function PoseDetector({
   const measurementUnitRef = useRef(measurementUnit);
   const onAnalysisStatusChangeRef = useRef(onAnalysisStatusChange);
 
+  // Manual angle measurement - three clicks (ray end, vertex, ray end), unlike
+  // the click-drag distance tool above since a third point can't be captured
+  // in one drag gesture. Each click commits the next point; the angle is
+  // reported (and the overlay finalized) as soon as the third lands.
+  const [anglePoints, setAnglePoints] = useState<{ x: number; y: number }[]>([]);
+  const [angleResult, setAngleResult] = useState<{ points: { x: number; y: number }[]; angleDegrees: number } | null>(null);
+  const [angleHoverPoint, setAngleHoverPoint] = useState<{ x: number; y: number } | null>(null);
+  const anglePointsRef = useRef(anglePoints);
+  const angleResultRef = useRef(angleResult);
+  const angleHoverPointRef = useRef(angleHoverPoint);
+  const onAngleMeasuredRef = useRef(onAngleMeasured);
+  const onHeightCalibrationPixelsRef = useRef(onHeightCalibrationPixels);
+
   useEffect(() => {
     strikeZoneConfigRef.current = strikeZoneConfig;
     showStrikeZoneRef.current = showStrikeZone;
@@ -387,6 +464,11 @@ export function PoseDetector({
     onMeasurementCompleteRef.current = onMeasurementComplete;
     measurementUnitRef.current = measurementUnit;
     onAnalysisStatusChangeRef.current = onAnalysisStatusChange;
+    anglePointsRef.current = anglePoints;
+    angleResultRef.current = angleResult;
+    angleHoverPointRef.current = angleHoverPoint;
+    onAngleMeasuredRef.current = onAngleMeasured;
+    onHeightCalibrationPixelsRef.current = onHeightCalibrationPixels;
     targetModeRef.current = targetMode;
     pitcherHandednessRef.current = pitcherHandedness;
 
@@ -983,7 +1065,18 @@ export function PoseDetector({
   // sampled video time for the offline Analyze sweep, so speed math (dist/dt) reflects
   // real elapsed time regardless of how fast the calling loop actually runs.
   const processPoseFrame = (pose: poseDetection.Pose, ctx: CanvasRenderingContext2D, now: number) => {
-    const keypoints = pose.keypoints;
+    // Smooth each keypoint's raw (x, y) before anything downstream reads it,
+    // so drawing/angles/speeds/trajectory all see stabilized positions
+    // instead of MoveNet's per-frame jitter (see OneEuroFilter above).
+    const keypoints = pose.keypoints.map(kp => {
+      const name = kp.name || '';
+      let filters = keypointFiltersRef.current.get(name);
+      if (!filters) {
+        filters = { x: new OneEuroFilter(), y: new OneEuroFilter() };
+        keypointFiltersRef.current.set(name, filters);
+      }
+      return { ...kp, x: filters.x.filter(kp.x, now), y: filters.y.filter(kp.y, now) };
+    });
 
     // Draw keypoints and skeleton
     if (showSkeletonRef.current && appModeRef.current !== 'pitching') {
@@ -995,6 +1088,25 @@ export function PoseDetector({
     const keypointMap = new Map<string, poseDetection.Keypoint>(
       keypoints.map(kp => [kp.name || '', kp])
     );
+
+    // Height-based calibration: keeps trying every frame (rather than firing
+    // once and giving up) until a confident full-body view shows up, since
+    // the pitcher may not be framed correctly the instant this was armed.
+    // Nose-to-ankle is used as a proxy for standing height and divided by
+    // 0.93 (published average adult eye/nose height as a fraction of total
+    // height) to estimate it - MoveNet has no head-top or sole keypoint, so
+    // this is an approximation, not a precise measurement.
+    if (measureModeRef.current === 'height') {
+      const nose = keypointMap.get('nose');
+      const ankles = [keypointMap.get('left_ankle'), keypointMap.get('right_ankle')]
+        .filter((a): a is poseDetection.Keypoint => !!a && !!a.score && a.score > 0.3);
+      if (nose && nose.score && nose.score > 0.3 && ankles.length > 0) {
+        const ankleY = ankles.reduce((sum, a) => sum + a.y, 0) / ankles.length;
+        const estimatedHeightPixels = Math.abs(ankleY - nose.y) / 0.93;
+        onHeightCalibrationPixelsRef.current?.(estimatedHeightPixels);
+        onMeasureModeChangeRef.current?.('none');
+      }
+    }
 
     const rightShoulder = keypointMap.get('right_shoulder');
     const rightElbow = keypointMap.get('right_elbow');
@@ -1306,6 +1418,9 @@ export function PoseDetector({
       // Render the calibration/measurement line, if any
       drawMeasurement(ctx, canvas.width, canvas.height);
 
+      // Render the manual angle measurement, if any
+      drawAngleTool(ctx, canvas.width, canvas.height);
+
       // Reset single frame request flag after drawing
       singleFrameAnalyzeRequestedRef.current = false;
 
@@ -1432,10 +1547,12 @@ export function PoseDetector({
         return;
       }
 
-      // Escape cancels an in-progress calibration/measurement
+      // Escape cancels an in-progress calibration/measurement/angle
       if (e.key === 'Escape' && measureModeRef.current !== 'none') {
         e.preventDefault();
         setMeasurePoints([]);
+        setAnglePoints([]);
+        setAngleHoverPoint(null);
         onMeasureModeChangeRef.current?.('none');
         return;
       }
@@ -1718,6 +1835,85 @@ export function PoseDetector({
     ctx.restore();
   };
 
+  // Draws the in-progress angle measurement (0-2 committed points, plus a
+  // dashed rubber-band to the current pointer position) or the last
+  // completed one (3 points, solid rays + an arc/degree label at the
+  // vertex) - same click-to-place interaction as drawMeasurement above, but
+  // three points instead of a single drag since a vertex angle needs both
+  // rays. Vertex is always the middle point, matching calculateAngle's
+  // convention (a, vertex b, c) used for the automatic joint-angle overlay.
+  const drawAngleTool = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const committed = anglePointsRef.current;
+    const finished = angleResultRef.current?.points ?? null;
+    const pts = committed.length > 0 ? committed : finished;
+    if (!pts || pts.length === 0) return;
+
+    const toPx = (p: { x: number; y: number }) => ({ x: p.x * width, y: p.y * height });
+    const screenPts = pts.map(toPx);
+    const color = '#a78bfa'; // violet - distinct from calibrate (amber) / distance (sky)
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2;
+
+    if (screenPts.length >= 2) {
+      ctx.beginPath();
+      ctx.moveTo(screenPts[0].x, screenPts[0].y);
+      for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i].x, screenPts[i].y);
+      ctx.stroke();
+    }
+
+    // Live rubber-band from the last committed point to the pointer, while
+    // still placing the 2nd or 3rd point (no rubber-band before the 1st).
+    if (committed.length > 0 && committed.length < 3 && angleHoverPointRef.current) {
+      const hover = toPx(angleHoverPointRef.current);
+      const last = screenPts[screenPts.length - 1];
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(last.x, last.y);
+      ctx.lineTo(hover.x, hover.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(hover.x, hover.y, 4, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+
+    screenPts.forEach((p, i) => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, i === 1 ? 6 : 5, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+
+    if (screenPts.length === 3) {
+      const [a, v, b] = screenPts;
+      const angle1 = Math.atan2(a.y - v.y, a.x - v.x);
+      const angle2 = Math.atan2(b.y - v.y, b.x - v.x);
+      let diff = angle2 - angle1;
+      while (diff > Math.PI) diff -= 2 * Math.PI;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      const radius = 32;
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, radius, angle1, angle1 + diff, diff < 0);
+      ctx.stroke();
+
+      const angleDegrees = angleResultRef.current?.angleDegrees ?? Math.abs((diff * 180) / Math.PI);
+      const label = `${angleDegrees.toFixed(1)}°`;
+      ctx.font = 'bold 14px "JetBrains Mono", monospace';
+      const textWidth = ctx.measureText(label).width;
+      const labelX = v.x;
+      const labelY = v.y - radius - 14;
+      ctx.fillStyle = 'rgba(2, 6, 23, 0.85)';
+      ctx.fillRect(labelX - textWidth / 2 - 6, labelY - 12, textWidth + 12, 22);
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, labelX, labelY - 1);
+    }
+    ctx.restore();
+  };
+
   const undoDrawing = () => {
     setDrawings(prev => prev.slice(0, -1));
     singleFrameAnalyzeRequestedRef.current = true;
@@ -1946,7 +2142,13 @@ export function PoseDetector({
 
   // Handle dragging and clicking on the canvas
   const handleStart = (clientX: number, clientY: number) => {
-    if (measureModeRef.current !== 'none') {
+    // Height calibration doesn't need any canvas interaction - it just
+    // watches the pose stream (see processPoseFrame) - so ignore clicks
+    // entirely rather than letting them fall through to drawing/strike-zone/
+    // target-mode handling below.
+    if (measureModeRef.current === 'height') return;
+
+    if (measureModeRef.current === 'calibrate' || measureModeRef.current === 'measure') {
       const layout = getCanvasLayout();
       if (!layout) return;
       const clickX = clientX - layout.rect.left;
@@ -1955,6 +2157,36 @@ export function PoseDetector({
       const py = Math.max(0, Math.min(1, (clickY - layout.offsetY) / layout.drawnHeight));
       setMeasurePoints([{ x: px, y: py }]);
       singleFrameAnalyzeRequestedRef.current = true;
+      return;
+    }
+
+    if (measureModeRef.current === 'angle') {
+      const layout = getCanvasLayout();
+      if (!layout) return;
+      const clickX = clientX - layout.rect.left;
+      const clickY = clientY - layout.rect.top;
+      const px = Math.max(0, Math.min(1, (clickX - layout.offsetX) / layout.drawnWidth));
+      const py = Math.max(0, Math.min(1, (clickY - layout.offsetY) / layout.drawnHeight));
+
+      const next = [...anglePointsRef.current, { x: px, y: py }];
+      setAnglePoints(next);
+      singleFrameAnalyzeRequestedRef.current = true;
+
+      if (next.length === 3) {
+        const canvas = canvasRef.current;
+        const w = canvas?.width || 0;
+        const h = canvas?.height || 0;
+        const [a, v, b] = next.map(p => ({ x: p.x * w, y: p.y * h }));
+        const radians = Math.atan2(b.y - v.y, b.x - v.x) - Math.atan2(a.y - v.y, a.x - v.x);
+        let angleDegrees = Math.abs((radians * 180) / Math.PI);
+        if (angleDegrees > 180) angleDegrees = 360 - angleDegrees;
+
+        setAngleResult({ points: next, angleDegrees });
+        onAngleMeasuredRef.current?.(angleDegrees);
+        onMeasureModeChangeRef.current?.('none');
+        setAnglePoints([]);
+        setAngleHoverPoint(null);
+      }
       return;
     }
 
@@ -2044,7 +2276,7 @@ export function PoseDetector({
   };
 
   const handleMove = (clientX: number, clientY: number) => {
-    if (measureModeRef.current !== 'none') {
+    if (measureModeRef.current === 'calibrate' || measureModeRef.current === 'measure') {
       if (measurePointsRef.current.length === 1) {
         const layout = getCanvasLayout();
         if (!layout) return;
@@ -2053,6 +2285,21 @@ export function PoseDetector({
         const px = Math.max(0, Math.min(1, (clickX - layout.offsetX) / layout.drawnWidth));
         const py = Math.max(0, Math.min(1, (clickY - layout.offsetY) / layout.drawnHeight));
         setMeasurePoints([measurePointsRef.current[0], { x: px, y: py }]);
+        singleFrameAnalyzeRequestedRef.current = true;
+      }
+      return;
+    }
+
+    if (measureModeRef.current === 'angle') {
+      const committed = anglePointsRef.current;
+      if (committed.length > 0 && committed.length < 3) {
+        const layout = getCanvasLayout();
+        if (!layout) return;
+        const clickX = clientX - layout.rect.left;
+        const clickY = clientY - layout.rect.top;
+        const px = Math.max(0, Math.min(1, (clickX - layout.offsetX) / layout.drawnWidth));
+        const py = Math.max(0, Math.min(1, (clickY - layout.offsetY) / layout.drawnHeight));
+        setAngleHoverPoint({ x: px, y: py });
         singleFrameAnalyzeRequestedRef.current = true;
       }
       return;
@@ -2207,7 +2454,12 @@ export function PoseDetector({
   };
 
   const handleEnd = (clientX: number, clientY: number, wasClick: boolean) => {
-    if (measureModeRef.current !== 'none') {
+    // See handleStart - height calibration needs no canvas interaction, so
+    // a stray tap/click while it's armed shouldn't log a pitch or anything
+    // else the fallthrough logic below would otherwise do.
+    if (measureModeRef.current === 'height') return;
+
+    if (measureModeRef.current === 'calibrate' || measureModeRef.current === 'measure') {
       const pts = measurePointsRef.current;
       if (pts.length === 2) {
         const canvas = canvasRef.current;
@@ -2231,6 +2483,11 @@ export function PoseDetector({
       singleFrameAnalyzeRequestedRef.current = true;
       return;
     }
+
+    // Angle points are committed on press (handleStart) since a 3rd point
+    // can't be captured in the same drag as the first two - nothing to do
+    // on release.
+    if (measureModeRef.current === 'angle') return;
 
     const drawTool = activeDrawToolRef.current;
     if (drawTool !== 'none') {
@@ -2766,15 +3023,22 @@ export function PoseDetector({
             </div>
           )}
 
-          {/* Calibration / Measurement hint banner - only shown while actively picking two points */}
+          {/* Calibration / Measurement / Angle hint banner - only shown while actively picking points */}
           {measureMode !== 'none' && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 px-3.5 py-2 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-lg shadow-lg">
-              <span className={`text-[10px] font-bold uppercase tracking-wider ${measureMode === 'calibrate' ? 'text-amber-300' : 'text-sky-300'}`}>
-                {measureMode === 'calibrate' ? 'Calibrating' : 'Measuring'}: click and drag across a known distance
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                measureMode === 'calibrate' ? 'text-amber-300' : measureMode === 'angle' || measureMode === 'height' ? 'text-violet-300' : 'text-sky-300'
+              }`}>
+                {measureMode === 'calibrate' && 'Calibrating: click and drag across a known distance'}
+                {measureMode === 'measure' && 'Measuring: click and drag across a known distance'}
+                {measureMode === 'angle' && `Angle: click point ${anglePoints.length + 1} of 3 (ray end, vertex, ray end)`}
+                {measureMode === 'height' && 'Height Calibration: stand with your full body in frame, head to feet'}
               </span>
               <button
                 onClick={() => {
                   setMeasurePoints([]);
+                  setAnglePoints([]);
+                  setAngleHoverPoint(null);
                   onMeasureModeChange?.('none');
                 }}
                 className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"

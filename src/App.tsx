@@ -12,7 +12,7 @@ const KinematicChart = lazy(() =>
   import('./components/KinematicChart').then(m => ({ default: m.KinematicChart }))
 );
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb, Play, StopCircle, MapPin, Clock, FileText } from 'lucide-react';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb, Play, StopCircle, MapPin, Clock, FileText, DraftingCompass } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
 import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession, getPlayerSessionCount, getPlayerSessionCounts } from './pocketbase';
@@ -179,8 +179,9 @@ export default function App() {
   const [calibrationUnit, setCalibrationUnit] = useState<'ft' | 'm'>('ft');
   const [referenceDistanceValue, setReferenceDistanceValue] = useState(60.5); // mound-to-plate default, in calibrationUnit
   const [pixelsPerFoot, setPixelsPerFoot] = useState<number | null>(null);
-  const [measureMode, setMeasureMode] = useState<'none' | 'calibrate' | 'measure'>('none');
+  const [measureMode, setMeasureMode] = useState<'none' | 'calibrate' | 'measure' | 'angle' | 'height'>('none');
   const [lastMeasuredFeet, setLastMeasuredFeet] = useState<number | null>(null);
+  const [lastMeasuredAngle, setLastMeasuredAngle] = useState<number | null>(null);
 
   const [metrics, setMetrics] = useState<PoseMetrics>({ 
     rightArmAngle: 0, 
@@ -645,6 +646,11 @@ export default function App() {
                    setPixelsPerFoot(pixelDistance / referenceDistanceFeet);
                  }}
                  onMeasurementComplete={setLastMeasuredFeet}
+                 onAngleMeasured={setLastMeasuredAngle}
+                 onHeightCalibrationPixels={(pixelHeight) => {
+                   if (!selectedPlayer?.height_in) return;
+                   setPixelsPerFoot(pixelHeight / (selectedPlayer.height_in / 12));
+                 }}
                  measurementUnit={calibrationUnit}
                  cameraZoom={cameraZoom}
                  onCameraZoomChange={setCameraZoom}
@@ -1365,6 +1371,29 @@ export default function App() {
                           Clear calibration
                         </button>
                       )}
+
+                      <div className="flex items-center gap-2 my-3">
+                        <div className="flex-1 h-px bg-slate-800"></div>
+                        <span className="text-[9px] text-slate-600 uppercase font-bold">or</span>
+                        <div className="flex-1 h-px bg-slate-800"></div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setMeasureMode('height');
+                          setShowSetupModal(false);
+                        }}
+                        disabled={!selectedPlayer?.height_in}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg transition-all cursor-pointer"
+                      >
+                        <User className="w-3.5 h-3.5" />
+                        <span>Calibrate from {selectedPlayer?.name || 'Player'}'s Height</span>
+                      </button>
+                      <p className="text-[10px] text-slate-500 mt-2">
+                        {selectedPlayer?.height_in
+                          ? "Skips drawing a line - stand the pitcher's full body in frame and hold still for a moment."
+                          : 'Set a height for the selected player in the Profile tab to enable this.'}
+                      </p>
                     </div>
 
                     <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
@@ -1393,6 +1422,31 @@ export default function App() {
                               ? `${lastMeasuredFeet.toFixed(2)} ft`
                               : `${(lastMeasuredFeet / FEET_PER_METER).toFixed(2)} m`}
                           </span>
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                      <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-1">Measure an Angle</h4>
+                      <p className="text-[11px] text-slate-400 mb-4">
+                        Click three points on the video - one ray end, the vertex, then the other ray end -
+                        to read the angle between them. No calibration needed; works on any frame.
+                      </p>
+
+                      <button
+                        onClick={() => {
+                          setMeasureMode('angle');
+                          setShowSetupModal(false);
+                        }}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg transition-all cursor-pointer"
+                      >
+                        <DraftingCompass className="w-3.5 h-3.5" />
+                        <span>Measure Angle</span>
+                      </button>
+
+                      {lastMeasuredAngle !== null && (
+                        <p className="text-[11px] text-slate-400 mt-3 font-mono">
+                          Last angle: <span className="text-violet-400 font-bold">{lastMeasuredAngle.toFixed(1)}°</span>
                         </p>
                       )}
                     </div>
