@@ -1,3 +1,12 @@
+## 1.2.14
+
+* Fixed recorded video coming out with none of the skeleton, strike
+  zone, pitch marker, trajectory, or HUD overlays when recording from
+  the live camera - it was capturing the raw camera feed directly
+  instead of the annotated canvas, so on a phone (where the live
+  camera is by far the most common source) every recording came out
+  as just the bare video.
+
 ## 1.2.13
 
 * Fixed the drawing panel's Undo (Ctrl+Z) and Clear buttons doing
