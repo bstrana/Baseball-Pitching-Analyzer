@@ -232,40 +232,6 @@ export function PoseDetector({
   targetMode = false,
   pitcherHandedness = 'right'
 }: PoseDetectorProps) {
-  // Pitch stats for the on-canvas overlay (Pitches / Strike % / Avg Velo / Max Velo)
-  const pitchStrikes = pitches.filter(p => p.isStrike).length;
-  const pitchStrikePercentage = pitches.length > 0 ? Math.round((pitchStrikes / pitches.length) * 100) : 0;
-  const pitchAvgVelo = pitches.length > 0 ? Math.round(pitches.reduce((sum, p) => sum + p.velocity, 0) / pitches.length) : 0;
-  const pitchMaxVelo = pitches.length > 0 ? Math.max(...pitches.map(p => p.velocity)) : 0;
-
-  // Same breakdown, per pitch type, for the rows listed under the totals -
-  // only types that have actually been thrown, most-thrown first.
-  const pitchStatsByType = Object.entries(
-    pitches.reduce((acc, p) => {
-      if (!acc[p.type]) acc[p.type] = { count: 0, strikes: 0, totalVelo: 0, maxVelo: 0 };
-      acc[p.type].count += 1;
-      if (p.isStrike) acc[p.type].strikes += 1;
-      acc[p.type].totalVelo += p.velocity;
-      acc[p.type].maxVelo = Math.max(acc[p.type].maxVelo, p.velocity);
-      return acc;
-    }, {} as Record<string, { count: number; strikes: number; totalVelo: number; maxVelo: number }>)
-  )
-    .map(([type, s]) => ({
-      type: type as PitchType,
-      count: s.count,
-      strikePercentage: Math.round((s.strikes / s.count) * 100),
-      avgVelo: Math.round(s.totalVelo / s.count),
-      maxVelo: s.maxVelo,
-    }))
-    .sort((a, b) => b.count - a.count);
-
-  // Target Mode accuracy tally for the on-canvas overlay, counting only
-  // pitches that were actually thrown at a target
-  const targetGradedPitches = pitches.filter(p => p.missResult);
-  const targetOnCount = targetGradedPitches.filter(p => p.missResult === 'on-target').length;
-  const targetGoodMissCount = targetGradedPitches.filter(p => p.missResult === 'good-miss').length;
-  const targetBadMissCount = targetGradedPitches.filter(p => p.missResult === 'bad-miss').length;
-
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -330,7 +296,8 @@ export function PoseDetector({
   const visibleMarkersRef = useRef(visibleMarkers || defaultVisibleMarkers);
   const showSkeletonRef = useRef(showSkeleton);
   const showTrajectoryRef = useRef(showTrajectory);
-  
+  const cameraZoomRef = useRef(cameraZoom);
+
   // Cache variables to prevent jitter when the video is paused/stopped
   const cachedPoseRef = useRef<poseDetection.Pose | null>(null);
   const cachedPoseTimeRef = useRef<number>(-1);
@@ -399,6 +366,10 @@ export function PoseDetector({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Off-DOM canvas + its own redraw loop, used only while recording with the
+  // digital zoom active (see startRecording) - never attached to the page.
+  const zoomRecordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const zoomRecordingRafRef = useRef<number | null>(null);
   // Kept in sync with `recordings` state purely so the unmount cleanup below
   // can revoke whatever object URLs are still outstanding at that point.
   const recordingsRef = useRef(recordings);
@@ -477,6 +448,7 @@ export function PoseDetector({
     showSkeletonRef.current = showSkeleton;
     showTrajectoryRef.current = showTrajectory;
     visibleMarkersRef.current = visibleMarkers || defaultVisibleMarkers;
+    cameraZoomRef.current = cameraZoom;
 
     drawingsRef.current = drawings;
     activeDrawingRef.current = activeDrawing;
@@ -610,9 +582,17 @@ export function PoseDetector({
             audio: false
           }
         : {
+            // Requested as "ideal" (not "exact"), so a device that can't hit
+            // it still gets the closest match instead of failing outright.
+            // The canvas - and so the recording - is sized to whatever the
+            // camera actually delivers (canvas.width/height mirror
+            // video.videoWidth/videoHeight each frame), and pose-detection
+            // cost doesn't scale with it (MoveNet resizes to a fixed 192x192
+            // internally), so there's no tracking-performance reason to ask
+            // for less than a modern phone's camera can comfortably give.
             video: {
-              width: { ideal: 640 },
-              height: { ideal: 480 },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
               facingMode: { ideal: facing }
             },
             audio: false
@@ -691,7 +671,42 @@ export function PoseDetector({
 
     if (canvasRef.current) {
       try {
-        stream = (canvasRef.current as any).captureStream(30);
+        // The digital zoom (1x-3x) is a CSS transform on the live canvas -
+        // purely a visual effect, invisible to captureStream() since that
+        // only ever reads the canvas's actual pixel buffer, never how it's
+        // presented on screen. While zoomed, redraw a cropped/rescaled copy
+        // of that buffer into a dedicated off-DOM canvas every frame and
+        // record that instead, so the recording matches what's on screen.
+        if (cameraZoomRef.current !== 1) {
+          const source = canvasRef.current;
+          const recCanvas = document.createElement('canvas');
+          recCanvas.width = source.width;
+          recCanvas.height = source.height;
+          const recCtx = recCanvas.getContext('2d');
+          zoomRecordingCanvasRef.current = recCanvas;
+
+          const drawZoomedFrame = () => {
+            const src = canvasRef.current;
+            if (!recCtx || !src) return;
+            if (recCanvas.width !== src.width || recCanvas.height !== src.height) {
+              recCanvas.width = src.width;
+              recCanvas.height = src.height;
+            }
+            const zoom = cameraZoomRef.current || 1;
+            const sw = src.width / zoom;
+            const sh = src.height / zoom;
+            const sx = (src.width - sw) / 2;
+            const sy = (src.height - sh) / 2;
+            recCtx.clearRect(0, 0, recCanvas.width, recCanvas.height);
+            recCtx.drawImage(src, sx, sy, sw, sh, 0, 0, recCanvas.width, recCanvas.height);
+            zoomRecordingRafRef.current = requestAnimationFrame(drawZoomedFrame);
+          };
+          drawZoomedFrame();
+
+          stream = (recCanvas as any).captureStream(30);
+        } else {
+          stream = (canvasRef.current as any).captureStream(30);
+        }
       } catch (e) {
         console.error("Canvas captureStream failed:", e);
       }
@@ -761,6 +776,11 @@ export function PoseDetector({
         recordingTimerRef.current = null;
       }
     }
+    if (zoomRecordingRafRef.current) {
+      cancelAnimationFrame(zoomRecordingRafRef.current);
+      zoomRecordingRafRef.current = null;
+    }
+    zoomRecordingCanvasRef.current = null;
   };
 
   // Play a selected recording back in the pose detector
@@ -1512,6 +1532,8 @@ export function PoseDetector({
         drawStrikeZoneOverlay(ctx, canvas.width, canvas.height);
         drawPitchesOverlay(ctx, canvas.width, canvas.height);
         drawTargetOverlay(ctx, canvas.width, canvas.height);
+        drawPitchStatsOverlay(ctx, canvas.width);
+        drawWalkAlertOverlay(ctx, canvas.width, canvas.height);
       }
 
       // Render custom annotations (telestrator drawing lines)
@@ -2213,6 +2235,188 @@ export function PoseDetector({
     ctx.textAlign = 'center';
     ctx.fillText('TARGET', tX, tY - radius - 6);
     ctx.textAlign = 'left';
+    ctx.restore();
+  };
+
+  // Draws the Pitches/Strike%/Avg/Max totals, the same breakdown per pitch
+  // type, and the Target Mode accuracy tally directly onto the canvas -
+  // these used to be DOM elements floated over the canvas, which looked
+  // right on screen but never showed up in a recording, since recording
+  // captures only what's actually drawn to the canvas (see startRecording).
+  // Reads from the pitches ref rather than the pitches prop directly since
+  // this runs inside the long-lived animation-frame loop.
+  const drawPitchStatsOverlay = (ctx: CanvasRenderingContext2D, width: number) => {
+    const pitches = pitchesRef.current;
+    if (pitches.length === 0) return;
+
+    const strikes = pitches.filter(p => p.isStrike).length;
+    const strikePct = Math.round((strikes / pitches.length) * 100);
+    const avgVelo = Math.round(pitches.reduce((sum, p) => sum + p.velocity, 0) / pitches.length);
+    const maxVelo = Math.max(...pitches.map(p => p.velocity));
+
+    type TypeTotals = { count: number; strikes: number; totalVelo: number; maxVelo: number };
+    const grouped: Record<string, TypeTotals> = {};
+    pitches.forEach((p) => {
+      if (!grouped[p.type]) grouped[p.type] = { count: 0, strikes: 0, totalVelo: 0, maxVelo: 0 };
+      grouped[p.type].count += 1;
+      if (p.isStrike) grouped[p.type].strikes += 1;
+      grouped[p.type].totalVelo += p.velocity;
+      grouped[p.type].maxVelo = Math.max(grouped[p.type].maxVelo, p.velocity);
+    });
+    const byType = Object.entries(grouped)
+      .map(([type, s]) => ({
+        type: type as PitchType,
+        count: s.count,
+        strikePct: Math.round((s.strikes / s.count) * 100),
+        avgVelo: Math.round(s.totalVelo / s.count),
+        maxVelo: s.maxVelo,
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    const graded = pitches.filter(p => p.missResult);
+    const onTarget = graded.filter(p => p.missResult === 'on-target').length;
+    const goodMiss = graded.filter(p => p.missResult === 'good-miss').length;
+    const badMiss = graded.filter(p => p.missResult === 'bad-miss').length;
+
+    const strikeColor = (pct: number) => (pct >= 60 ? '#34d399' : pct >= 45 ? '#fbbf24' : '#cbd5e1');
+
+    const panelW = 220;
+    const marginX = 12;
+    const marginTop = 12;
+    const lineH = 15;
+    const padX = 10;
+    const padY = 8;
+    const sectionGap = 8;
+
+    const totalLines = 2 + byType.length + (graded.length > 0 ? 1 : 0);
+    const sectionGaps = (byType.length > 0 ? 1 : 0) + (graded.length > 0 ? 1 : 0);
+    const panelH = padY * 2 + totalLines * lineH + sectionGaps * sectionGap;
+
+    const x = width - marginX - panelW;
+    const y = marginTop;
+    const leftX = x + padX;
+    const rightX = x + panelW - padX;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.85)';
+    ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y, panelW, panelH, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    let cursorY = y + padY + 10;
+
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = 'bold 11px "JetBrains Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${pitches.length} PITCHES`, leftX, cursorY);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = strikeColor(strikePct);
+    ctx.fillText(`${strikePct}% K`, rightX, cursorY);
+    cursorY += lineH;
+
+    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`AVG ${avgVelo} MPH`, leftX, cursorY);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText(`MAX ${maxVelo} MPH`, rightX, cursorY);
+    cursorY += lineH;
+
+    if (byType.length > 0) {
+      cursorY += sectionGap;
+      ctx.strokeStyle = 'rgba(100, 116, 139, 0.3)';
+      ctx.beginPath();
+      ctx.moveTo(leftX, cursorY - lineH + 3);
+      ctx.lineTo(rightX, cursorY - lineH + 3);
+      ctx.stroke();
+
+      byType.forEach((t) => {
+        ctx.font = '9px "Inter", sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = getPitchTypeColor(t.type);
+        ctx.beginPath();
+        ctx.arc(leftX + 3, cursorY - 3, 3, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillText(t.type, leftX + 10, cursorY);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = strikeColor(t.strikePct);
+        ctx.fillText(`${t.count} · ${t.strikePct}% · ${t.avgVelo}/${t.maxVelo}`, rightX, cursorY);
+        cursorY += lineH;
+      });
+    }
+
+    if (graded.length > 0) {
+      cursorY += sectionGap;
+      ctx.strokeStyle = 'rgba(100, 116, 139, 0.3)';
+      ctx.beginPath();
+      ctx.moveTo(leftX, cursorY - lineH + 3);
+      ctx.lineTo(rightX, cursorY - lineH + 3);
+      ctx.stroke();
+
+      ctx.font = 'bold 10px "JetBrains Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#34d399';
+      ctx.fillText(`ON ${onTarget}`, leftX, cursorY);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillText(`GOOD ${goodMiss}`, x + panelW / 2, cursorY);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#f87171';
+      ctx.fillText(`BAD ${badMiss}`, rightX, cursorY);
+    }
+
+    ctx.textAlign = 'left';
+    ctx.restore();
+  };
+
+  // Draws a pulsing "N BALLS IN A ROW" alert banner once the most recent
+  // pitches - walking backward from the last one thrown - are all balls
+  // and that streak reaches 4 (an automatic walk). Stays up for as long as
+  // the streak continues (in case the coach keeps throwing past 4 rather
+  // than resetting between at-bats) and disappears the instant a strike
+  // breaks it. Drawn on the canvas, not as a DOM element, so it's baked
+  // into a recording the same way the other pitch stats are.
+  const drawWalkAlertOverlay = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const pitches = pitchesRef.current;
+    let streak = 0;
+    for (let i = pitches.length - 1; i >= 0; i--) {
+      if (pitches[i].isStrike) break;
+      streak++;
+    }
+    if (streak < 4) return;
+
+    const label = streak === 4 ? '4 BALLS - WALK' : `${streak} STRAIGHT BALLS`;
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 220);
+
+    ctx.save();
+    ctx.font = 'bold 20px "Inter", sans-serif';
+    const textWidth = ctx.measureText(label).width;
+    const boxW = textWidth + 56;
+    const boxH = 46;
+    const x = width / 2 - boxW / 2;
+    const y = height * 0.12;
+
+    ctx.fillStyle = `rgba(127, 29, 29, ${0.55 + 0.25 * pulse})`; // red-900, pulsing
+    ctx.strokeStyle = `rgba(248, 113, 113, ${0.6 + 0.4 * pulse})`; // red-400, pulsing
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, boxW, boxH, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, width / 2, y + boxH / 2 + 1);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
     ctx.restore();
   };
 
@@ -3456,76 +3660,10 @@ export function PoseDetector({
             )}
           </div>
 
-          {/* Pitch stats overlay - Pitches / Strike % / Avg Velo / Max Velo, on
-              the canvas instead of the sidebar so they're visible without
-              opening the panel */}
-          {appMode === 'pitching' && pitches.length > 0 && (
-            <div className="flex items-center gap-1.5 bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg px-1 py-1">
-              <div className="px-2 py-0.5 text-center">
-                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Pitches</p>
-                <p className="text-sm font-mono text-white font-bold leading-none mt-0.5">{pitches.length}</p>
-              </div>
-              <div className="w-px h-6 bg-slate-700/60" />
-              <div className="px-2 py-0.5 text-center">
-                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Strike %</p>
-                <p className={`text-sm font-mono font-bold leading-none mt-0.5 ${
-                  pitchStrikePercentage >= 60 ? 'text-emerald-400' : pitchStrikePercentage >= 45 ? 'text-amber-400' : 'text-slate-300'
-                }`}>
-                  {pitchStrikePercentage}%
-                </p>
-              </div>
-              <div className="w-px h-6 bg-slate-700/60" />
-              <div className="px-2 py-0.5 text-center">
-                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Avg Velo</p>
-                <p className="text-sm font-mono text-slate-300 font-bold leading-none mt-0.5">{pitchAvgVelo}</p>
-              </div>
-              <div className="w-px h-6 bg-slate-700/60" />
-              <div className="px-2 py-0.5 text-center">
-                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Max Velo</p>
-                <p className="text-sm font-mono text-sky-400 font-bold leading-none mt-0.5">{pitchMaxVelo}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Same breakdown per pitch type, listed under the totals above */}
-          {appMode === 'pitching' && pitchStatsByType.length > 0 && (
-            <div className="bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg px-2 py-1.5 min-w-[196px]">
-              {pitchStatsByType.map(({ type, count, strikePercentage, avgVelo, maxVelo }) => (
-                <div key={type} className="flex items-center gap-2 text-[9px] font-mono py-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getPitchTypeColor(type) }} />
-                  <span className="text-slate-300 font-sans font-semibold uppercase tracking-wide flex-1 truncate">{type}</span>
-                  <span className="text-white font-bold w-4 text-right">{count}</span>
-                  <span className={`w-9 text-right font-bold ${
-                    strikePercentage >= 60 ? 'text-emerald-400' : strikePercentage >= 45 ? 'text-amber-400' : 'text-slate-400'
-                  }`}>
-                    {strikePercentage}%
-                  </span>
-                  <span className="text-slate-300 font-bold w-8 text-right" title="Average velocity">{avgVelo}</span>
-                  <span className="text-sky-400 font-bold w-9 text-right" title="Max velocity">{maxVelo}mph</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Target Mode accuracy tally - only once at least one pitch has been graded */}
-          {appMode === 'pitching' && targetGradedPitches.length > 0 && (
-            <div className="flex items-center gap-1.5 bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg px-1 py-1">
-              <div className="px-2 py-0.5 text-center">
-                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">On Target</p>
-                <p className="text-sm font-mono text-emerald-400 font-bold leading-none mt-0.5">{targetOnCount}</p>
-              </div>
-              <div className="w-px h-6 bg-slate-700/60" />
-              <div className="px-2 py-0.5 text-center">
-                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Good Miss</p>
-                <p className="text-sm font-mono text-amber-400 font-bold leading-none mt-0.5">{targetGoodMissCount}</p>
-              </div>
-              <div className="w-px h-6 bg-slate-700/60" />
-              <div className="px-2 py-0.5 text-center">
-                <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Bad Miss</p>
-                <p className="text-sm font-mono text-red-400 font-bold leading-none mt-0.5">{targetBadMissCount}</p>
-              </div>
-            </div>
-          )}
+          {/* Pitches/Strike%/Avg/Max totals, the per-pitch-type breakdown, and
+              the Target Mode accuracy tally are drawn directly onto the
+              canvas (see drawPitchStatsOverlay) rather than as DOM elements
+              here, so they show up in recordings too. */}
           </div>
 
           {/* Bottom Floating Heads-Up Control Bar - draggable via the grip handle */}
@@ -3582,10 +3720,10 @@ export function PoseDetector({
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => skipFrame('backward')}
-                      className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                      className="p-3 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors touch-manipulation"
                       title="Skip 1 frame backward (Left Arrow)"
                     >
-                      <SkipBack className="w-3.5 h-3.5" />
+                      <SkipBack className="w-5 h-5" />
                     </button>
                     <button
                       onClick={togglePlayPause}
@@ -3601,10 +3739,10 @@ export function PoseDetector({
                     </button>
                     <button
                       onClick={() => skipFrame('forward')}
-                      className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                      className="p-3 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors touch-manipulation"
                       title="Skip 1 frame forward (Right Arrow)"
                     >
-                      <SkipForward className="w-3.5 h-3.5" />
+                      <SkipForward className="w-5 h-5" />
                     </button>
                   </div>
 
