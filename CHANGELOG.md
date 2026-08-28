@@ -1,5 +1,10 @@
-## 1.2.16
+## 1.2.15
 
+* The Skeletal Tracker and Motion Trajectory Path overlays now work in
+  Pitch Tracker mode too, not just Mechanics Tracker - both the
+  on-canvas toggles and the overlays themselves were previously
+  disabled there entirely, so there was no way to see (or record)
+  body mechanics alongside the strike zone and pitch markers.
 * Fixed Pitch Tracker's on-canvas stats (Pitches/Strike%/Avg/Max
   totals, the per-pitch-type breakdown, and the Target Mode accuracy
   tally) not showing up in recordings - they were drawn as elements
@@ -17,14 +22,6 @@
   zoom was a screen-only visual effect invisible to the recorder;
   recording now bakes it into the captured frames so playback matches
   what was shown on screen while filming.
-
-## 1.2.15
-
-* The Skeletal Tracker and Motion Trajectory Path overlays now work in
-  Pitch Tracker mode too, not just Mechanics Tracker - both the
-  on-canvas toggles and the overlays themselves were previously
-  disabled there entirely, so there was no way to see (or record)
-  body mechanics alongside the strike zone and pitch markers.
 
 ## 1.2.14
 
