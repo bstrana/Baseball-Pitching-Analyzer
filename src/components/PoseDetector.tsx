@@ -296,7 +296,8 @@ export function PoseDetector({
   const visibleMarkersRef = useRef(visibleMarkers || defaultVisibleMarkers);
   const showSkeletonRef = useRef(showSkeleton);
   const showTrajectoryRef = useRef(showTrajectory);
-  
+  const cameraZoomRef = useRef(cameraZoom);
+
   // Cache variables to prevent jitter when the video is paused/stopped
   const cachedPoseRef = useRef<poseDetection.Pose | null>(null);
   const cachedPoseTimeRef = useRef<number>(-1);
@@ -365,6 +366,10 @@ export function PoseDetector({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Off-DOM canvas + its own redraw loop, used only while recording with the
+  // digital zoom active (see startRecording) - never attached to the page.
+  const zoomRecordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const zoomRecordingRafRef = useRef<number | null>(null);
   // Kept in sync with `recordings` state purely so the unmount cleanup below
   // can revoke whatever object URLs are still outstanding at that point.
   const recordingsRef = useRef(recordings);
@@ -443,6 +448,7 @@ export function PoseDetector({
     showSkeletonRef.current = showSkeleton;
     showTrajectoryRef.current = showTrajectory;
     visibleMarkersRef.current = visibleMarkers || defaultVisibleMarkers;
+    cameraZoomRef.current = cameraZoom;
 
     drawingsRef.current = drawings;
     activeDrawingRef.current = activeDrawing;
@@ -665,7 +671,42 @@ export function PoseDetector({
 
     if (canvasRef.current) {
       try {
-        stream = (canvasRef.current as any).captureStream(30);
+        // The digital zoom (1x-3x) is a CSS transform on the live canvas -
+        // purely a visual effect, invisible to captureStream() since that
+        // only ever reads the canvas's actual pixel buffer, never how it's
+        // presented on screen. While zoomed, redraw a cropped/rescaled copy
+        // of that buffer into a dedicated off-DOM canvas every frame and
+        // record that instead, so the recording matches what's on screen.
+        if (cameraZoomRef.current !== 1) {
+          const source = canvasRef.current;
+          const recCanvas = document.createElement('canvas');
+          recCanvas.width = source.width;
+          recCanvas.height = source.height;
+          const recCtx = recCanvas.getContext('2d');
+          zoomRecordingCanvasRef.current = recCanvas;
+
+          const drawZoomedFrame = () => {
+            const src = canvasRef.current;
+            if (!recCtx || !src) return;
+            if (recCanvas.width !== src.width || recCanvas.height !== src.height) {
+              recCanvas.width = src.width;
+              recCanvas.height = src.height;
+            }
+            const zoom = cameraZoomRef.current || 1;
+            const sw = src.width / zoom;
+            const sh = src.height / zoom;
+            const sx = (src.width - sw) / 2;
+            const sy = (src.height - sh) / 2;
+            recCtx.clearRect(0, 0, recCanvas.width, recCanvas.height);
+            recCtx.drawImage(src, sx, sy, sw, sh, 0, 0, recCanvas.width, recCanvas.height);
+            zoomRecordingRafRef.current = requestAnimationFrame(drawZoomedFrame);
+          };
+          drawZoomedFrame();
+
+          stream = (recCanvas as any).captureStream(30);
+        } else {
+          stream = (canvasRef.current as any).captureStream(30);
+        }
       } catch (e) {
         console.error("Canvas captureStream failed:", e);
       }
@@ -735,6 +776,11 @@ export function PoseDetector({
         recordingTimerRef.current = null;
       }
     }
+    if (zoomRecordingRafRef.current) {
+      cancelAnimationFrame(zoomRecordingRafRef.current);
+      zoomRecordingRafRef.current = null;
+    }
+    zoomRecordingCanvasRef.current = null;
   };
 
   // Play a selected recording back in the pose detector
@@ -1487,6 +1533,7 @@ export function PoseDetector({
         drawPitchesOverlay(ctx, canvas.width, canvas.height);
         drawTargetOverlay(ctx, canvas.width, canvas.height);
         drawPitchStatsOverlay(ctx, canvas.width);
+        drawWalkAlertOverlay(ctx, canvas.width, canvas.height);
       }
 
       // Render custom annotations (telestrator drawing lines)
@@ -2326,6 +2373,50 @@ export function PoseDetector({
     }
 
     ctx.textAlign = 'left';
+    ctx.restore();
+  };
+
+  // Draws a pulsing "N BALLS IN A ROW" alert banner once the most recent
+  // pitches - walking backward from the last one thrown - are all balls
+  // and that streak reaches 4 (an automatic walk). Stays up for as long as
+  // the streak continues (in case the coach keeps throwing past 4 rather
+  // than resetting between at-bats) and disappears the instant a strike
+  // breaks it. Drawn on the canvas, not as a DOM element, so it's baked
+  // into a recording the same way the other pitch stats are.
+  const drawWalkAlertOverlay = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const pitches = pitchesRef.current;
+    let streak = 0;
+    for (let i = pitches.length - 1; i >= 0; i--) {
+      if (pitches[i].isStrike) break;
+      streak++;
+    }
+    if (streak < 4) return;
+
+    const label = streak === 4 ? '4 BALLS - WALK' : `${streak} STRAIGHT BALLS`;
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 220);
+
+    ctx.save();
+    ctx.font = 'bold 20px "Inter", sans-serif';
+    const textWidth = ctx.measureText(label).width;
+    const boxW = textWidth + 56;
+    const boxH = 46;
+    const x = width / 2 - boxW / 2;
+    const y = height * 0.12;
+
+    ctx.fillStyle = `rgba(127, 29, 29, ${0.55 + 0.25 * pulse})`; // red-900, pulsing
+    ctx.strokeStyle = `rgba(248, 113, 113, ${0.6 + 0.4 * pulse})`; // red-400, pulsing
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, boxW, boxH, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, width / 2, y + boxH / 2 + 1);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
     ctx.restore();
   };
 
