@@ -1,3 +1,23 @@
+## 1.2.16
+
+* Fixed Pitch Tracker's on-canvas stats (Pitches/Strike%/Avg/Max
+  totals, the per-pitch-type breakdown, and the Target Mode accuracy
+  tally) not showing up in recordings - they were drawn as elements
+  floating over the video, invisible to the recorder, and are now
+  drawn directly onto the canvas so they're captured too.
+* Bumped the default live-camera resolution request from 640x480 to
+  1920x1080 (best-effort, matched to what the device can actually
+  deliver) for higher-quality recordings.
+* Enlarged the on-canvas prev/next-frame buttons for easier tapping on
+  a phone.
+* Added a pulsing "4 BALLS - WALK" alert on the canvas once four
+  pitches in a row come back as balls with no strike breaking the
+  streak - visible live and baked into recordings.
+* Fixed recorded video not reflecting the app's digital zoom level -
+  zoom was a screen-only visual effect invisible to the recorder;
+  recording now bakes it into the captured frames so playback matches
+  what was shown on screen while filming.
+
 ## 1.2.15
 
 * The Skeletal Tracker and Motion Trajectory Path overlays now work in
