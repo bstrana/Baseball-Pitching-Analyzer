@@ -1,3 +1,11 @@
+## 1.2.15
+
+* The Skeletal Tracker and Motion Trajectory Path overlays now work in
+  Pitch Tracker mode too, not just Mechanics Tracker - both the
+  on-canvas toggles and the overlays themselves were previously
+  disabled there entirely, so there was no way to see (or record)
+  body mechanics alongside the strike zone and pitch markers.
+
 ## 1.2.14
 
 * Fixed recorded video coming out with none of the skeleton, strike
