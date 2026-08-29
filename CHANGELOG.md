@@ -1,3 +1,14 @@
+## 1.2.16
+
+* Fixed the Pitch Tracker's on-canvas stats panel (and the "4 BALLS -
+  WALK" alert) silently failing to draw on browsers/WebViews that
+  don't support `ctx.roundRect()` - because all of a frame's drawing
+  calls shared one error handler, that one incompatibility could also
+  block whichever overlays were queued to draw after it in the same
+  frame. Replaced it with a hand-rolled rounded-rectangle path and
+  isolated each overlay's drawing so a failure in one can no longer
+  take out the others.
+
 ## 1.2.15
 
 * The Skeletal Tracker and Motion Trajectory Path overlays now work in
