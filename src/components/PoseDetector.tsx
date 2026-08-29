@@ -77,6 +77,25 @@ const formatFeetInUnit = (feet: number, unit: 'ft' | 'in' | 'm', isRate: boolean
 
 const getPitchTypeColor = (type: PitchType): string => PITCH_TYPE_INFO[type].hexColor;
 
+// Traces a rounded-rect path using only moveTo/lineTo/arcTo - unlike
+// CanvasRenderingContext2D.roundRect() (Chrome 99+/Safari 16+/Firefox 112+),
+// arcTo has been part of Canvas2D since the original spec, so this works on
+// any browser/WebView the app might run in. An uncaught exception from a
+// missing roundRect here would silently abort every other draw call sharing
+// the same per-frame try/catch in detectPose - not just this shape.
+const pathRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+};
+
 export interface PoseMetrics {
   rightArmAngle: number;
   leftArmAngle: number;
@@ -1532,8 +1551,21 @@ export function PoseDetector({
         drawStrikeZoneOverlay(ctx, canvas.width, canvas.height);
         drawPitchesOverlay(ctx, canvas.width, canvas.height);
         drawTargetOverlay(ctx, canvas.width, canvas.height);
-        drawPitchStatsOverlay(ctx, canvas.width);
-        drawWalkAlertOverlay(ctx, canvas.width, canvas.height);
+        // Isolated in their own try/catch - detectPose's own try/catch below
+        // wraps every draw call this frame, so an exception in either of
+        // these (before this existed, an unsupported ctx.roundRect() did
+        // exactly this) would otherwise also silently skip the strike
+        // zone/annotations/measurement calls around them.
+        try {
+          drawPitchStatsOverlay(ctx, canvas.width);
+        } catch (e) {
+          console.error('drawPitchStatsOverlay failed:', e);
+        }
+        try {
+          drawWalkAlertOverlay(ctx, canvas.width, canvas.height);
+        } catch (e) {
+          console.error('drawWalkAlertOverlay failed:', e);
+        }
       }
 
       // Render custom annotations (telestrator drawing lines)
@@ -2302,7 +2334,7 @@ export function PoseDetector({
     ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(x, y, panelW, panelH, 8);
+    pathRoundedRect(ctx, x, y, panelW, panelH, 8);
     ctx.fill();
     ctx.stroke();
 
@@ -2407,7 +2439,7 @@ export function PoseDetector({
     ctx.strokeStyle = `rgba(248, 113, 113, ${0.6 + 0.4 * pulse})`; // red-400, pulsing
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(x, y, boxW, boxH, 10);
+    pathRoundedRect(ctx, x, y, boxW, boxH, 10);
     ctx.fill();
     ctx.stroke();
 
