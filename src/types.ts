@@ -48,6 +48,11 @@ export const PITCH_TYPES: PitchType[] = [
 
 export type PitcherHandedness = 'right' | 'left';
 
+// Mechanics Tracker (pose analysis only), Pitch Tracker (strike zone +
+// location), or Split Test (velocity comparison across mechanical tweaks,
+// no location) - the three top-level modes selectable from the nav bar.
+export type AppMode = 'mechanics' | 'pitching' | 'splitTest';
+
 export type MissResult = 'on-target' | 'good-miss' | 'bad-miss';
 
 export interface KinematicFrame {
@@ -75,6 +80,40 @@ export interface Pitch {
   targetZoneLabel?: string;
   pitchZoneLabel?: string;
   badShape?: boolean; // manually flagged execution miss (flat curve, hanging slider, etc.)
+}
+
+// --- Split Test Mode ---
+//
+// A Group is a mechanical variable a coach wants to isolate (e.g. "Foot on
+// Rubber"); each Group holds a small number of Sets - the specific tweaks
+// being compared (e.g. "Inward" / "Neutral" / "Outward"). Split Test Mode
+// has no pitch location: each logged pitch just tags a velocity reading
+// with whichever Group/Set was active, so sets within a group can be
+// compared on average/max velocity to see which tweak is worth promoting
+// into the pitcher's actual mechanics.
+export interface SplitTestSet {
+  id: string;
+  name: string;
+}
+
+export interface SplitTestGroup {
+  id: string;
+  name: string;
+  sets: SplitTestSet[];
+}
+
+// groupName/setName are denormalized (copied at log time) so a pitch's
+// history stays meaningful even after its group or set is later renamed
+// or deleted.
+export interface SplitTestPitch {
+  id: string;
+  number: number;
+  groupId: string;
+  groupName: string;
+  setId: string;
+  setName: string;
+  velocity: number; // mph
+  timestamp: Date;
 }
 
 export interface StrikeZoneConfig {
