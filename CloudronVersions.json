@@ -936,6 +936,45 @@
       "ts": "Sat, 29 Aug 2026 08:24:08 GMT",
       "publishState": "published",
       "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.2.16"
+    },
+    "1.2.17": {
+      "manifest": {
+        "id": "io.github.bstrana.baseball-pitching-analyzer",
+        "title": "Baseball Pitching Analyzer",
+        "author": "bstrana",
+        "description": "Real-time baseball pitching and swing mechanics analysis, powered by TensorFlow.js pose detection running entirely in the browser. Track pitching and hitting mechanics live from your webcam — all processing happens client-side in the browser. Sign-in via Keycloak is required. Player rosters and saved sessions are stored in a bundled PocketBase backend.",
+        "tagline": "Real-time baseball pitching & swing mechanics analysis",
+        "version": "1.2.17",
+        "manifestVersion": 2,
+        "minBoxVersion": "9.1.0",
+        "website": "https://github.com/bstrana/Baseball-Pitching-Analyzer",
+        "contactEmail": "tomislav.bosanac@gmail.com",
+        "healthCheckPath": "/health",
+        "httpPort": 8000,
+        "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.2.17",
+        "addons": {
+          "localstorage": {}
+        },
+        "icon": "file://appicon.png",
+        "iconUrl": "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/appicon.png",
+        "tags": [
+          "sports",
+          "baseball",
+          "video",
+          "analytics"
+        ],
+        "mediaLinks": [
+          "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/appicon.png"
+        ],
+        "changelog": "Added Split Test Mode to the Pitch Tracker - a third mode for comparing pitch velocity across mechanical tweaks with no pitch location involved. Define a Group for a mechanical variable with Sets for the tweaks being compared, then log pitches against whichever is active; the results panel highlights whichever set has the highest average velocity as the tweak worth promoting. Fixed the Pitch Tracker's on-canvas stats panel never appearing on a live camera feed on phones whose screen aspect ratio differs enough from the camera's, and fixed the strike zone border/grid, pitch markers, and target crosshair rendering visually thinner/smaller than before after the 1920x1080 camera resolution bump.",
+        "postInstallMessage": "This app requires Keycloak sign-in. Create a client for this app in your Keycloak realm, then edit /app/data/config.env (KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID) and restart the app from the Cloudron dashboard. Until then, the app shows a 'sign-in not configured' message. Player rosters and saved sessions are stored in a bundled PocketBase backend, scoped per coach via the same Keycloak realm - optionally set PB_ADMIN_EMAIL and PB_ADMIN_PASSWORD in the same config.env to reach its admin dashboard at this app's URL + /pb/_/. To let a coaching staff share a roster, set a matching \"team\" attribute on each coach in Keycloak and add a User Attribute protocol mapper exposing it as a \"team\" claim.",
+        "packagerName": "bstrana",
+        "packagerUrl": "https://github.com/bstrana"
+      },
+      "creationDate": "Sat, 29 Aug 2026 20:28:07 GMT",
+      "ts": "Sat, 29 Aug 2026 20:28:07 GMT",
+      "publishState": "published",
+      "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.2.17"
     }
   }
 }
