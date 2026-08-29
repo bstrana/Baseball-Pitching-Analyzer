@@ -1557,12 +1557,12 @@ export function PoseDetector({
         // exactly this) would otherwise also silently skip the strike
         // zone/annotations/measurement calls around them.
         try {
-          drawPitchStatsOverlay(ctx, canvas.width);
+          drawPitchStatsOverlay(ctx);
         } catch (e) {
           console.error('drawPitchStatsOverlay failed:', e);
         }
         try {
-          drawWalkAlertOverlay(ctx, canvas.width, canvas.height);
+          drawWalkAlertOverlay(ctx);
         } catch (e) {
           console.error('drawWalkAlertOverlay failed:', e);
         }
@@ -2099,7 +2099,8 @@ export function PoseDetector({
   // Drawing Strike Zone
   const drawStrikeZoneOverlay = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     if (!showStrikeZoneRef.current) return;
-    
+
+    const s = getOverlayScale();
     const szX = strikeZoneConfigRef.current.x * width;
     const szY = strikeZoneConfigRef.current.y * height;
     const szW = strikeZoneConfigRef.current.width * width;
@@ -2111,13 +2112,13 @@ export function PoseDetector({
 
     // Draw main border
     ctx.strokeStyle = 'rgba(239, 68, 68, 0.8)'; // solid red neon border
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3 * s;
     ctx.strokeRect(szX, szY, szW, szH);
 
     // Draw 3x3 inner grid lines
     ctx.strokeStyle = 'rgba(239, 68, 68, 0.35)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1.5 * s;
+    ctx.setLineDash([4 * s, 4 * s]);
 
     // Vertical lines
     ctx.beginPath();
@@ -2146,11 +2147,11 @@ export function PoseDetector({
 
       ctx.fillStyle = '#f43f5e'; // rose-500
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.5 * s;
 
       corners.forEach(c => {
         ctx.beginPath();
-        ctx.arc(c.cx, c.cy, 6, 0, 2 * Math.PI);
+        ctx.arc(c.cx, c.cy, 6 * s, 0, 2 * Math.PI);
         ctx.fill();
         ctx.stroke();
       });
@@ -2168,6 +2169,7 @@ export function PoseDetector({
 
   // Drawing Plotted Pitches
   const drawPitchesOverlay = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const s = getOverlayScale();
     pitchesRef.current.forEach((pitch) => {
       const pX = pitch.x * width;
       const pY = pitch.y * height;
@@ -2180,35 +2182,35 @@ export function PoseDetector({
       const isLastPitch = pitch.number === pitchesRef.current.length;
       if (isSelected || isLastPitch) {
         ctx.beginPath();
-        ctx.arc(pX, pY, isSelected ? 14 : 10, 0, 2 * Math.PI);
+        ctx.arc(pX, pY, (isSelected ? 14 : 10) * s, 0, 2 * Math.PI);
         ctx.fillStyle = isSelected ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255, 255, 255, 0.3)';
         ctx.fill();
         ctx.strokeStyle = isSelected ? '#38bdf8' : '#ffffff';
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.5 * s;
         ctx.stroke();
       }
 
       // Target Mode: ring the marker with its miss grade
       if (pitch.missResult) {
         ctx.beginPath();
-        ctx.arc(pX, pY, 11, 0, 2 * Math.PI);
+        ctx.arc(pX, pY, 11 * s, 0, 2 * Math.PI);
         ctx.strokeStyle = MISS_RESULT_COLORS[pitch.missResult];
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2 * s;
         ctx.stroke();
       }
 
       // Draw baseball inner circle
       ctx.beginPath();
-      ctx.arc(pX, pY, 7, 0, 2 * Math.PI);
+      ctx.arc(pX, pY, 7 * s, 0, 2 * Math.PI);
       ctx.fillStyle = color;
       ctx.fill();
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.5 * s;
       ctx.stroke();
 
       // Draw text number inside ball
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 8px "JetBrains Mono", monospace';
+      ctx.font = `bold ${8 * s}px "JetBrains Mono", monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(pitch.number.toString(), pX, pY);
@@ -2216,12 +2218,12 @@ export function PoseDetector({
       // Draw the MPH label below the ball, if enabled
       if (showPitchSpeedsRef.current) {
         const label = `${pitch.velocity}`;
-        const labelY = pY + 15;
-        ctx.font = 'bold 9px "JetBrains Mono", monospace';
+        const labelY = pY + 15 * s;
+        ctx.font = `bold ${9 * s}px "JetBrains Mono", monospace`;
         const labelWidth = ctx.measureText(label).width;
 
         ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-        ctx.fillRect(pX - labelWidth / 2 - 3, labelY - 7, labelWidth + 6, 14);
+        ctx.fillRect(pX - labelWidth / 2 - 3 * s, labelY - 7 * s, labelWidth + 6 * s, 14 * s);
 
         ctx.fillStyle = '#ffffff';
         ctx.fillText(label, pX, labelY);
@@ -2240,32 +2242,33 @@ export function PoseDetector({
     const target = targetPosRef.current;
     if (!target) return;
 
+    const s = getOverlayScale();
     const tX = target.x * width;
     const tY = target.y * height;
-    const radius = 16;
+    const radius = 16 * s;
     const color = '#facc15'; // amber-400
 
     ctx.save();
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2.5;
-    ctx.setLineDash([5, 4]);
+    ctx.lineWidth = 2.5 * s;
+    ctx.setLineDash([5 * s, 4 * s]);
     ctx.beginPath();
     ctx.arc(tX, tY, radius, 0, 2 * Math.PI);
     ctx.stroke();
     ctx.setLineDash([]);
 
     ctx.beginPath();
-    ctx.moveTo(tX - 6, tY);
-    ctx.lineTo(tX + 6, tY);
-    ctx.moveTo(tX, tY - 6);
-    ctx.lineTo(tX, tY + 6);
-    ctx.lineWidth = 1.5;
+    ctx.moveTo(tX - 6 * s, tY);
+    ctx.lineTo(tX + 6 * s, tY);
+    ctx.moveTo(tX, tY - 6 * s);
+    ctx.lineTo(tX, tY + 6 * s);
+    ctx.lineWidth = 1.5 * s;
     ctx.stroke();
 
-    ctx.font = 'bold 9px "Inter", sans-serif';
+    ctx.font = `bold ${9 * s}px "Inter", sans-serif`;
     ctx.fillStyle = color;
     ctx.textAlign = 'center';
-    ctx.fillText('TARGET', tX, tY - radius - 6);
+    ctx.fillText('TARGET', tX, tY - radius - 6 * s);
     ctx.textAlign = 'left';
     ctx.restore();
   };
@@ -2277,7 +2280,7 @@ export function PoseDetector({
   // captures only what's actually drawn to the canvas (see startRecording).
   // Reads from the pitches ref rather than the pitches prop directly since
   // this runs inside the long-lived animation-frame loop.
-  const drawPitchStatsOverlay = (ctx: CanvasRenderingContext2D, width: number) => {
+  const drawPitchStatsOverlay = (ctx: CanvasRenderingContext2D) => {
     const pitches = pitchesRef.current;
     if (pitches.length === 0) return;
 
@@ -2312,36 +2315,47 @@ export function PoseDetector({
 
     const strikeColor = (pct: number) => (pct >= 60 ? '#34d399' : pct >= 45 ? '#fbbf24' : '#cbd5e1');
 
-    const panelW = 220;
-    const marginX = 12;
-    const marginTop = 12;
-    const lineH = 15;
-    const padX = 10;
-    const padY = 8;
-    const sectionGap = 8;
+    const visible = getVisibleCanvasRect();
+    // A live camera feed's object-fit: cover can crop the canvas down to a
+    // much narrower on-screen window than its full backing-store width
+    // (see getVisibleCanvasRect), so scaling this panel by the full
+    // capture-resolution ratio could make it wider than what's actually
+    // visible. Cap the scale so the panel (plus its margins) always fits
+    // within the visible window, even if that means drawing it a bit
+    // smaller than its "ideal" size in an extreme crop.
+    const visibleWidth = Math.max(0, visible.right - visible.left);
+    const maxScaleForWidth = visibleWidth > 0 ? visibleWidth / (220 + 2 * 12) : Infinity;
+    const scale = Math.min(getOverlayScale(), maxScaleForWidth);
+    const panelW = 220 * scale;
+    const marginX = 12 * scale;
+    const marginTop = 12 * scale;
+    const lineH = 15 * scale;
+    const padX = 10 * scale;
+    const padY = 8 * scale;
+    const sectionGap = 8 * scale;
 
     const totalLines = 2 + byType.length + (graded.length > 0 ? 1 : 0);
     const sectionGaps = (byType.length > 0 ? 1 : 0) + (graded.length > 0 ? 1 : 0);
     const panelH = padY * 2 + totalLines * lineH + sectionGaps * sectionGap;
 
-    const x = width - marginX - panelW;
-    const y = marginTop;
+    const x = visible.right - marginX - panelW;
+    const y = visible.top + marginTop;
     const leftX = x + padX;
     const rightX = x + panelW - padX;
 
     ctx.save();
     ctx.fillStyle = 'rgba(2, 6, 23, 0.85)';
     ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1 * scale;
     ctx.beginPath();
-    pathRoundedRect(ctx, x, y, panelW, panelH, 8);
+    pathRoundedRect(ctx, x, y, panelW, panelH, 8 * scale);
     ctx.fill();
     ctx.stroke();
 
-    let cursorY = y + padY + 10;
+    let cursorY = y + padY + 10 * scale;
 
     ctx.textBaseline = 'alphabetic';
-    ctx.font = 'bold 11px "JetBrains Mono", monospace';
+    ctx.font = `bold ${11 * scale}px "JetBrains Mono", monospace`;
     ctx.textAlign = 'left';
     ctx.fillStyle = '#ffffff';
     ctx.fillText(`${pitches.length} PITCHES`, leftX, cursorY);
@@ -2350,7 +2364,7 @@ export function PoseDetector({
     ctx.fillText(`${strikePct}% K`, rightX, cursorY);
     cursorY += lineH;
 
-    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.font = `${10 * scale}px "JetBrains Mono", monospace`;
     ctx.textAlign = 'left';
     ctx.fillStyle = '#94a3b8';
     ctx.fillText(`AVG ${avgVelo} MPH`, leftX, cursorY);
@@ -2363,19 +2377,19 @@ export function PoseDetector({
       cursorY += sectionGap;
       ctx.strokeStyle = 'rgba(100, 116, 139, 0.3)';
       ctx.beginPath();
-      ctx.moveTo(leftX, cursorY - lineH + 3);
-      ctx.lineTo(rightX, cursorY - lineH + 3);
+      ctx.moveTo(leftX, cursorY - lineH + 3 * scale);
+      ctx.lineTo(rightX, cursorY - lineH + 3 * scale);
       ctx.stroke();
 
       byType.forEach((t) => {
-        ctx.font = '9px "Inter", sans-serif';
+        ctx.font = `${9 * scale}px "Inter", sans-serif`;
         ctx.textAlign = 'left';
         ctx.fillStyle = getPitchTypeColor(t.type);
         ctx.beginPath();
-        ctx.arc(leftX + 3, cursorY - 3, 3, 0, 2 * Math.PI);
+        ctx.arc(leftX + 3 * scale, cursorY - 3 * scale, 3 * scale, 0, 2 * Math.PI);
         ctx.fill();
         ctx.fillStyle = '#cbd5e1';
-        ctx.fillText(t.type, leftX + 10, cursorY);
+        ctx.fillText(t.type, leftX + 10 * scale, cursorY);
 
         ctx.textAlign = 'right';
         ctx.fillStyle = strikeColor(t.strikePct);
@@ -2388,11 +2402,11 @@ export function PoseDetector({
       cursorY += sectionGap;
       ctx.strokeStyle = 'rgba(100, 116, 139, 0.3)';
       ctx.beginPath();
-      ctx.moveTo(leftX, cursorY - lineH + 3);
-      ctx.lineTo(rightX, cursorY - lineH + 3);
+      ctx.moveTo(leftX, cursorY - lineH + 3 * scale);
+      ctx.lineTo(rightX, cursorY - lineH + 3 * scale);
       ctx.stroke();
 
-      ctx.font = 'bold 10px "JetBrains Mono", monospace';
+      ctx.font = `bold ${10 * scale}px "JetBrains Mono", monospace`;
       ctx.textAlign = 'left';
       ctx.fillStyle = '#34d399';
       ctx.fillText(`ON ${onTarget}`, leftX, cursorY);
@@ -2415,7 +2429,7 @@ export function PoseDetector({
   // than resetting between at-bats) and disappears the instant a strike
   // breaks it. Drawn on the canvas, not as a DOM element, so it's baked
   // into a recording the same way the other pitch stats are.
-  const drawWalkAlertOverlay = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  const drawWalkAlertOverlay = (ctx: CanvasRenderingContext2D) => {
     const pitches = pitchesRef.current;
     let streak = 0;
     for (let i = pitches.length - 1; i >= 0; i--) {
@@ -2427,29 +2441,70 @@ export function PoseDetector({
     const label = streak === 4 ? '4 BALLS - WALK' : `${streak} STRAIGHT BALLS`;
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 220);
 
+    const visible = getVisibleCanvasRect();
+    const centerX = (visible.left + visible.right) / 2;
+    const scale = getOverlayScale();
+
     ctx.save();
-    ctx.font = 'bold 20px "Inter", sans-serif';
+    ctx.font = `bold ${20 * scale}px "Inter", sans-serif`;
     const textWidth = ctx.measureText(label).width;
-    const boxW = textWidth + 56;
-    const boxH = 46;
-    const x = width / 2 - boxW / 2;
-    const y = height * 0.12;
+    const boxW = textWidth + 56 * scale;
+    const boxH = 46 * scale;
+    const x = centerX - boxW / 2;
+    const y = visible.top + (visible.bottom - visible.top) * 0.12;
 
     ctx.fillStyle = `rgba(127, 29, 29, ${0.55 + 0.25 * pulse})`; // red-900, pulsing
     ctx.strokeStyle = `rgba(248, 113, 113, ${0.6 + 0.4 * pulse})`; // red-400, pulsing
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 * scale;
     ctx.beginPath();
-    pathRoundedRect(ctx, x, y, boxW, boxH, 10);
+    pathRoundedRect(ctx, x, y, boxW, boxH, 10 * scale);
     ctx.fill();
     ctx.stroke();
 
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, width / 2, y + boxH / 2 + 1);
+    ctx.fillText(label, centerX, y + boxH / 2 + 1);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.restore();
+  };
+
+  // Pitch Tracker's overlays (strike zone, pitch markers, target, stats
+  // panel) use pixel constants tuned against the original 640px-wide
+  // capture. Bumping the default camera request up to 1920x1080 made the
+  // backing store much higher-resolution without changing its on-screen
+  // display size, so every fixed-pixel stroke/radius/font now renders
+  // visually thinner/smaller than before. Scaling those constants by the
+  // canvas's actual width relative to that 640px baseline keeps their
+  // on-screen size consistent regardless of capture resolution.
+  const getOverlayScale = () => Math.max(1, (canvasRef.current?.width ?? 640) / 640);
+
+  // The live camera feed is displayed with object-fit: cover (see the
+  // <canvas> element below), so on a phone whose screen is much taller/
+  // narrower than the camera's native aspect ratio, the browser crops the
+  // canvas's own backing-store pixels to fill the screen - it doesn't scale
+  // the whole image down like "contain" does. An overlay anchored to the
+  // raw canvas edge (e.g. drawPitchStatsOverlay's original top-right
+  // anchor) can end up entirely inside that cropped-away region and never
+  // actually appear on screen, even though it drew without error. This
+  // maps the canvas's on-screen visible window back into canvas pixel
+  // coordinates, reusing getCanvasLayout's cover/contain math, so overlays
+  // can anchor to what's actually visible instead of the full canvas.
+  const getVisibleCanvasRect = () => {
+    const canvas = canvasRef.current;
+    const layout = getCanvasLayout();
+    if (!canvas || !layout || layout.drawnWidth === 0 || layout.drawnHeight === 0) {
+      return { left: 0, top: 0, right: canvas?.width ?? 0, bottom: canvas?.height ?? 0 };
+    }
+    const scaleX = layout.drawnWidth / canvas.width;
+    const scaleY = layout.drawnHeight / canvas.height;
+    return {
+      left: Math.max(0, -layout.offsetX / scaleX),
+      top: Math.max(0, -layout.offsetY / scaleY),
+      right: Math.min(canvas.width, (layout.rect.width - layout.offsetX) / scaleX),
+      bottom: Math.min(canvas.height, (layout.rect.height - layout.offsetY) / scaleY),
+    };
   };
 
   // Helper to map screen coordinates to the actual drawn content inside the canvas,
