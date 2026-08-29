@@ -1,3 +1,25 @@
+## 1.2.17
+
+* Added Split Test Mode to the Pitch Tracker - a third mode for comparing
+  pitch velocity across mechanical tweaks with no pitch location involved.
+  Define a Group for a mechanical variable (e.g. "Foot on Rubber") with
+  Sets for the tweaks being compared (e.g. "Inward"/"Neutral"/"Outward"),
+  then log pitches against whichever is active. The results panel shows
+  count/avg/max velocity per set and highlights whichever one has the
+  highest average as the tweak worth promoting into the pitcher's actual
+  mechanics.
+* Fixed the Pitch Tracker's on-canvas stats panel never appearing on a
+  live camera feed on phones whose screen aspect ratio differs enough
+  from the camera's - the panel was anchored to the raw canvas's
+  top-right corner, but the camera view crops the canvas to fill the
+  screen, so that corner could fall entirely outside what's actually
+  visible. Overlays now anchor to the canvas's visible on-screen window
+  instead of its raw bounds.
+* Fixed the strike zone border/grid, pitch markers, and target crosshair
+  rendering visually thinner/smaller than before - a side effect of the
+  1920x1080 camera resolution bump in 1.2.15 that this release now
+  accounts for.
+
 ## 1.2.16
 
 * Fixed the Pitch Tracker's on-canvas stats panel (and the "4 BALLS -
