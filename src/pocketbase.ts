@@ -1,5 +1,5 @@
 import PocketBase from 'pocketbase';
-import { Pitch, KinematicFrame, StrikeZoneConfig } from './types';
+import { Pitch, KinematicFrame, StrikeZoneConfig, SplitTestGroup, SplitTestPitch } from './types';
 import { PoseMetrics } from './components/PoseDetector';
 import { keycloak, keycloakEnabled } from './auth';
 
@@ -53,6 +53,21 @@ export interface PitchSessionRecord {
   pitches: Pitch[];
   total_pitches: number;
   strikes: number;
+  avg_velocity: number;
+  max_velocity: number;
+  notes: string;
+  location: string;
+  duration_seconds: number;
+  recorded_at: string;
+  created: string;
+}
+
+export interface SplitTestSessionRecord {
+  id: string;
+  player: string;
+  groups: SplitTestGroup[];
+  pitches: SplitTestPitch[];
+  total_pitches: number;
   avg_velocity: number;
   max_velocity: number;
   notes: string;
@@ -124,6 +139,34 @@ export async function savePitchSession(data: {
   });
 }
 
+export async function saveSplitTestSession(data: {
+  player: string;
+  groups: SplitTestGroup[];
+  pitches: SplitTestPitch[];
+  notes?: string;
+  location?: string;
+  duration_seconds?: number;
+}): Promise<SplitTestSessionRecord> {
+  const speeds = data.pitches.map(p => p.velocity);
+  const avg_velocity = speeds.length ? Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length) : 0;
+  const max_velocity = speeds.length ? Math.max(...speeds) : 0;
+
+  return pb.collection('split_test_sessions').create<SplitTestSessionRecord>({
+    ...data,
+    total_pitches: data.pitches.length,
+    avg_velocity,
+    max_velocity,
+    recorded_at: new Date().toISOString(),
+  });
+}
+
+export async function listSplitTestSessions(playerId: string): Promise<SplitTestSessionRecord[]> {
+  return pb.collection('split_test_sessions').getFullList<SplitTestSessionRecord>({
+    filter: pb.filter('player = {:playerId}', { playerId }),
+    sort: '-recorded_at',
+  });
+}
+
 export async function listMechanicsSessions(playerId: string): Promise<MechanicsSessionRecord[]> {
   return pb.collection('mechanics_sessions').getFullList<MechanicsSessionRecord>({
     filter: pb.filter('player = {:playerId}', { playerId }),
@@ -138,31 +181,33 @@ export async function listPitchSessions(playerId: string): Promise<PitchSessionR
   });
 }
 
-// Combined mechanics + pitch session count for one player, for the roster
-// list - uses getList(1, 1) so PocketBase only has to report totalItems
-// rather than the full record set.
+// Combined mechanics + pitch + split-test session count for one player, for
+// the roster list - uses getList(1, 1) so PocketBase only has to report
+// totalItems rather than the full record set.
 export async function getPlayerSessionCount(playerId: string): Promise<number> {
   const filter = pb.filter('player = {:playerId}', { playerId });
-  const [mechanics, pitch] = await Promise.all([
+  const [mechanics, pitch, splitTest] = await Promise.all([
     pb.collection('mechanics_sessions').getList(1, 1, { filter, fields: 'id' }),
     pb.collection('pitch_sessions').getList(1, 1, { filter, fields: 'id' }),
+    pb.collection('split_test_sessions').getList(1, 1, { filter, fields: 'id' }),
   ]);
-  return mechanics.totalItems + pitch.totalItems;
+  return mechanics.totalItems + pitch.totalItems + splitTest.totalItems;
 }
 
 // Same combined count as getPlayerSessionCount, but for the whole roster at
-// once - 2 requests total (one per collection) instead of 2 per player, so
+// once - 3 requests total (one per collection) instead of 3 per player, so
 // the roster list doesn't fire O(players) requests every time it loads.
 export async function getPlayerSessionCounts(playerIds: string[]): Promise<Record<string, number>> {
   const counts: Record<string, number> = {};
   if (playerIds.length === 0) return counts;
 
   const filter = playerIds.map(id => pb.filter('player = {:id}', { id })).join(' || ');
-  const [mechanics, pitch] = await Promise.all([
+  const [mechanics, pitch, splitTest] = await Promise.all([
     pb.collection('mechanics_sessions').getFullList<{ player: string }>({ filter, fields: 'player' }),
     pb.collection('pitch_sessions').getFullList<{ player: string }>({ filter, fields: 'player' }),
+    pb.collection('split_test_sessions').getFullList<{ player: string }>({ filter, fields: 'player' }),
   ]);
-  for (const record of [...mechanics, ...pitch]) {
+  for (const record of [...mechanics, ...pitch, ...splitTest]) {
     counts[record.player] = (counts[record.player] ?? 0) + 1;
   }
   return counts;

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn, Maximize, Minimize, MoveDiagonal2, DraftingCompass } from 'lucide-react';
-import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, PITCH_TYPE_INFO, PITCH_TYPES, classifyPitch, classifyMiss, getTargetZoneLabel } from '../types';
+import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, AppMode, PITCH_TYPE_INFO, PITCH_TYPES, classifyPitch, classifyMiss, getTargetZoneLabel } from '../types';
 
 // Required to initialize the WebGL backend
 import '@tensorflow/tfjs-backend-webgl';
@@ -149,7 +149,7 @@ interface PoseDetectorProps {
   setShowTrajectory?: (show: boolean) => void;
 
   // App Mode and Config Changes
-  appMode?: 'mechanics' | 'pitching';
+  appMode?: AppMode;
   onConfigChange?: (config: StrikeZoneConfig) => void;
 
   // Distance calibration & measurement, and manual angle measurement
@@ -206,6 +206,11 @@ interface PoseDetectorProps {
   // existing zone geometry (glove side / arm side) for display.
   targetMode?: boolean;
   pitcherHandedness?: PitcherHandedness;
+
+  // Split Test Mode: which Group/Set is currently active, shown as an
+  // on-screen badge (e.g. "FOOT ON RUBBER · OUTWARD") so the coach can
+  // confirm what's being tested without looking away from the camera.
+  activeSplitTestLabel?: string;
 }
 
 export function PoseDetector({
@@ -249,7 +254,8 @@ export function PoseDetector({
   onAnalysisStatusChange,
   currentPlayerName,
   targetMode = false,
-  pitcherHandedness = 'right'
+  pitcherHandedness = 'right',
+  activeSplitTestLabel
 }: PoseDetectorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -3436,6 +3442,13 @@ export function PoseDetector({
           {currentPlayerName && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg pointer-events-none">
               <span className="text-[10px] font-bold font-mono text-white uppercase tracking-wider">{currentPlayerName}</span>
+            </div>
+          )}
+
+          {/* Split Test Mode - which Group/Set is currently active */}
+          {appMode === 'splitTest' && activeSplitTestLabel && (
+            <div className={`absolute left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 bg-violet-950/80 backdrop-blur-md border border-violet-500/40 rounded-lg shadow-lg pointer-events-none ${currentPlayerName ? 'top-12' : 'top-3'}`}>
+              <span className="text-[10px] font-bold font-mono text-violet-200 uppercase tracking-wider">{activeSplitTestLabel}</span>
             </div>
           )}
 

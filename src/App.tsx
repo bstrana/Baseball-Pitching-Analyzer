@@ -2,6 +2,7 @@ import React, { useState, useEffect, Suspense, lazy } from 'react';
 import type { PoseMetrics } from './components/PoseDetector';
 import { PitchTracker, PitchLog } from './components/PitchTracker';
 import { PitchVelocityChart } from './components/PitchVelocityChart';
+import { SplitTestTracker, SplitTestLog } from './components/SplitTestTracker';
 
 // Lazy-loaded: PoseDetector pulls in @tensorflow/tfjs + pose-detection, and
 // KinematicChart pulls in recharts - both are heavy and only needed once the
@@ -12,11 +13,11 @@ const PoseDetector = lazy(() =>
 const KinematicChart = lazy(() =>
   import('./components/KinematicChart').then(m => ({ default: m.KinematicChart }))
 );
-import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb, Play, StopCircle, MapPin, Clock, FileText, DraftingCompass, GripVertical, LayoutPanelTop } from 'lucide-react';
+import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, AppMode, SplitTestGroup, SplitTestPitch } from './types';
+import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb, Play, StopCircle, MapPin, Clock, FileText, DraftingCompass, GripVertical, LayoutPanelTop, GitCompare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
-import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession, getPlayerSessionCount, getPlayerSessionCounts } from './pocketbase';
+import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession, saveSplitTestSession, getPlayerSessionCount, getPlayerSessionCounts } from './pocketbase';
 import { CameraCapabilities, RESOLUTION_PRESETS, FRAME_RATE_PRESETS, listVideoInputDevices, probeCameraCapabilities } from './camera';
 
 const FEET_PER_METER = 3.28084;
@@ -445,8 +446,8 @@ export default function App() {
   // portrait or desktop) and only reappear while this is toggled on.
   const [mobileChromeExpanded, setMobileChromeExpanded] = useState(false);
 
-  // Active Mode: 'mechanics' or 'pitching'
-  const [appMode, setAppMode] = useState<'mechanics' | 'pitching'>('mechanics');
+  // Active Mode: 'mechanics', 'pitching', or 'splitTest'
+  const [appMode, setAppMode] = useState<AppMode>('mechanics');
 
   // Pitch Tracker states
   const [pitches, setPitches] = useState<Pitch[]>([]);
@@ -469,6 +470,72 @@ export default function App() {
   // the glove side / arm side wording, it doesn't change zone geometry.
   const [targetMode, setTargetMode] = useState(false);
   const [pitcherHandedness, setPitcherHandedness] = useState<PitcherHandedness>('right');
+
+  // Split Test Mode states - compares velocity across mechanical tweaks
+  // instead of pitch location. Groups/sets are defined ad hoc per session
+  // (e.g. group "Foot on Rubber" -> sets "Inward"/"Neutral"/"Outward").
+  const [splitTestGroups, setSplitTestGroups] = useState<SplitTestGroup[]>([]);
+  const [splitTestPitches, setSplitTestPitches] = useState<SplitTestPitch[]>([]);
+  const [activeSplitGroupId, setActiveSplitGroupId] = useState<string | null>(null);
+  const [activeSplitSetId, setActiveSplitSetId] = useState<string | null>(null);
+  const [splitTestVelocity, setSplitTestVelocity] = useState<number>(92);
+
+  const handleAddSplitGroup = (name: string) => {
+    const group: SplitTestGroup = { id: crypto.randomUUID(), name, sets: [] };
+    setSplitTestGroups(prev => [...prev, group]);
+  };
+
+  const handleDeleteSplitGroup = (id: string) => {
+    setSplitTestGroups(prev => prev.filter(g => g.id !== id));
+    if (activeSplitGroupId === id) {
+      setActiveSplitGroupId(null);
+      setActiveSplitSetId(null);
+    }
+  };
+
+  const handleAddSplitSet = (groupId: string, name: string) => {
+    setSplitTestGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, sets: [...g.sets, { id: crypto.randomUUID(), name }] } : g
+    ));
+  };
+
+  const handleDeleteSplitSet = (groupId: string, setId: string) => {
+    setSplitTestGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, sets: g.sets.filter(s => s.id !== setId) } : g
+    ));
+    if (activeSplitSetId === setId) setActiveSplitSetId(null);
+  };
+
+  const handleLogSplitTestPitch = () => {
+    const group = splitTestGroups.find(g => g.id === activeSplitGroupId);
+    const set = group?.sets.find(s => s.id === activeSplitSetId);
+    if (!group || !set) return;
+    const pitch: SplitTestPitch = {
+      id: crypto.randomUUID(),
+      number: splitTestPitches.length + 1,
+      groupId: group.id,
+      groupName: group.name,
+      setId: set.id,
+      setName: set.name,
+      velocity: splitTestVelocity,
+      timestamp: new Date(),
+    };
+    setSplitTestPitches(prev => [...prev, pitch]);
+  };
+
+  const handleRemoveSplitTestPitch = (id: string) => {
+    setSplitTestPitches(prev => prev.filter(p => p.id !== id).map((p, idx) => ({ ...p, number: idx + 1 })));
+  };
+
+  const handleClearSplitTestPitches = () => {
+    setSplitTestPitches([]);
+  };
+
+  const activeSplitTestLabel = (() => {
+    const group = splitTestGroups.find(g => g.id === activeSplitGroupId);
+    const set = group?.sets.find(s => s.id === activeSplitSetId);
+    return group && set ? `${group.name} · ${set.name}` : undefined;
+  })();
 
   const handleAddPitch = (pitch: Pitch) => {
     setPitches(prev => [...prev, pitch]);
@@ -499,7 +566,9 @@ export default function App() {
       durationSeconds: sessionElapsedSeconds,
       ...(appMode === 'mechanics'
         ? { cameraView, metrics, kinematicsData: liveKinematicsData }
-        : { strikeZoneConfig, pitches }),
+        : appMode === 'pitching'
+        ? { strikeZoneConfig, pitches }
+        : { splitTestGroups, splitTestPitches }),
     }, null, 2));
 
     const playerSlug = (selectedPlayer?.name || 'session').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'session';
@@ -528,11 +597,20 @@ export default function App() {
           location: sessionLocation,
           duration_seconds: sessionElapsedSeconds,
         });
-      } else {
+      } else if (appMode === 'pitching') {
         await savePitchSession({
           player: selectedPlayerId,
           strike_zone_config: strikeZoneConfig,
           pitches,
+          notes: sessionNote,
+          location: sessionLocation,
+          duration_seconds: sessionElapsedSeconds,
+        });
+      } else {
+        await saveSplitTestSession({
+          player: selectedPlayerId,
+          groups: splitTestGroups,
+          pitches: splitTestPitches,
           notes: sessionNote,
           location: sessionLocation,
           duration_seconds: sessionElapsedSeconds,
@@ -575,6 +653,18 @@ export default function App() {
         <Target className="w-4 h-4" />
         <span className="hidden sm:inline">Pitch Tracker</span>
         <span className="sm:hidden">Pitch</span>
+      </button>
+      <button
+        onClick={() => setAppMode('splitTest')}
+        className={`px-2 sm:px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-1 sm:gap-2 ${
+          appMode === 'splitTest'
+            ? 'bg-violet-600 text-white shadow-lg shadow-violet-600/20 font-extrabold'
+            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+        }`}
+      >
+        <GitCompare className="w-4 h-4" />
+        <span className="hidden sm:inline">Split Test</span>
+        <span className="sm:hidden">Split</span>
       </button>
     </div>
   );
@@ -845,6 +935,7 @@ export default function App() {
                  currentPlayerName={sessionActive ? selectedPlayer?.name : undefined}
                  targetMode={targetMode}
                  pitcherHandedness={pitcherHandedness}
+                 activeSplitTestLabel={activeSplitTestLabel}
                />
                </Suspense>
             </div>
@@ -942,7 +1033,7 @@ export default function App() {
         <aside
           ref={rightDockRef}
           className={`w-full lg:w-[var(--right-sidebar-w)] bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex-col shrink-0 overflow-hidden h-auto lg:h-full relative transition-colors ${
-            appMode === 'pitching' ? 'flex' : 'hidden'
+            appMode === 'pitching' || appMode === 'splitTest' ? 'flex' : 'hidden'
           } ${mobileChromeExpanded ? '' : 'max-lg:landscape:border-t-0'} ${dockZoneClass('right')}`}
           style={{ '--right-sidebar-w': `${rightSidebarWidth}px` } as React.CSSProperties}
         >
@@ -960,44 +1051,84 @@ export default function App() {
             }`}
           >
             <span className="text-[10px] uppercase font-bold tracking-widest flex items-center gap-2">
-              <Target className="w-3.5 h-3.5 text-rose-400" />
-              Pitch Accuracy Tracker
+              {appMode === 'splitTest' ? (
+                <GitCompare className="w-3.5 h-3.5 text-violet-400" />
+              ) : (
+                <Target className="w-3.5 h-3.5 text-rose-400" />
+              )}
+              {appMode === 'splitTest' ? 'Split Test Panel' : 'Pitch Accuracy Tracker'}
             </span>
             {showPitchTracker ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
           </button>
 
           <div className={`${showPitchTracker ? 'flex' : 'hidden'} lg:flex flex-col flex-1 min-h-0 overflow-hidden`}>
-            <div className="p-4 border-b border-slate-800 shrink-0 hidden lg:block">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></span>
-                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">PITCH ACCURACY TRACKER</p>
-              </div>
-              <p className="text-xs text-slate-400 mt-1">Track location, speed, and zone accuracy</p>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 min-h-0 max-h-[420px] lg:max-h-none">
-              {dockLayout.right.length === 0 ? (
-                <div className={`hidden lg:flex items-center justify-center gap-2 h-14 rounded-lg border-2 border-dashed text-[10px] font-bold uppercase tracking-widest text-center px-3 ${
-                  dockHoverZone === 'right' ? 'border-sky-500/60 text-sky-300' : 'border-slate-800 text-slate-600'
-                }`}>
-                  Drop a panel here
+            {appMode === 'pitching' ? (
+              <>
+                <div className="p-4 border-b border-slate-800 shrink-0 hidden lg:block">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></span>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">PITCH ACCURACY TRACKER</p>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Track location, speed, and zone accuracy</p>
                 </div>
-              ) : (
-                dockLayout.right.map(id => renderDockCard(id))
-              )}
+                <div className="flex-1 overflow-y-auto p-4 min-h-0 max-h-[420px] lg:max-h-none">
+                  {dockLayout.right.length === 0 ? (
+                    <div className={`hidden lg:flex items-center justify-center gap-2 h-14 rounded-lg border-2 border-dashed text-[10px] font-bold uppercase tracking-widest text-center px-3 ${
+                      dockHoverZone === 'right' ? 'border-sky-500/60 text-sky-300' : 'border-slate-800 text-slate-600'
+                    }`}>
+                      Drop a panel here
+                    </div>
+                  ) : (
+                    dockLayout.right.map(id => renderDockCard(id))
+                  )}
 
-              {/* Pitch log lives in the left column on lg+; keep it reachable
-                  here below lg where there's no room for a third column */}
-              <div className="lg:hidden mt-5 h-[360px]">
-                <PitchLog
-                  pitches={pitches}
-                  onRemovePitch={handleRemovePitch}
-                  onClearPitches={handleClearPitches}
-                  selectedPitchId={selectedPitchId}
-                  setSelectedPitchId={setSelectedPitchId}
-                  onToggleBadShape={handleToggleBadShape}
-                />
-              </div>
-            </div>
+                  {/* Pitch log lives in the left column on lg+; keep it reachable
+                      here below lg where there's no room for a third column */}
+                  <div className="lg:hidden mt-5 h-[360px]">
+                    <PitchLog
+                      pitches={pitches}
+                      onRemovePitch={handleRemovePitch}
+                      onClearPitches={handleClearPitches}
+                      selectedPitchId={selectedPitchId}
+                      setSelectedPitchId={setSelectedPitchId}
+                      onToggleBadShape={handleToggleBadShape}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="p-4 border-b border-slate-800 shrink-0 hidden lg:block">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 bg-violet-500 rounded-full animate-ping"></span>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">SPLIT TEST MODE</p>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Compare velocity across mechanical tweaks - no location</p>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 min-h-0 max-h-[640px] lg:max-h-none space-y-5">
+                  <SplitTestTracker
+                    groups={splitTestGroups}
+                    onAddGroup={handleAddSplitGroup}
+                    onDeleteGroup={handleDeleteSplitGroup}
+                    onAddSet={handleAddSplitSet}
+                    onDeleteSet={handleDeleteSplitSet}
+                    activeGroupId={activeSplitGroupId}
+                    setActiveGroupId={setActiveSplitGroupId}
+                    activeSetId={activeSplitSetId}
+                    setActiveSetId={setActiveSplitSetId}
+                    velocity={splitTestVelocity}
+                    setVelocity={setSplitTestVelocity}
+                    onLogPitch={handleLogSplitTestPitch}
+                  />
+                  <SplitTestLog
+                    groups={splitTestGroups}
+                    pitches={splitTestPitches}
+                    onRemovePitch={handleRemoveSplitTestPitch}
+                    onClearPitches={handleClearSplitTestPitches}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </aside>
 
