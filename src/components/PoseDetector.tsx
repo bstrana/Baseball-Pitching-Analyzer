@@ -1191,7 +1191,7 @@ export function PoseDetector({
     });
 
     // Draw keypoints and skeleton
-    if (showSkeletonRef.current) {
+    if (appModeRef.current === 'mechanics' && showSkeletonRef.current) {
       drawSkeleton(keypoints, ctx);
       drawKeypoints(keypoints, ctx);
     }
@@ -1238,7 +1238,7 @@ export function PoseDetector({
       const angle = calculateAngle(rightShoulder, rightElbow, rightWrist);
       if (angle !== null) {
         rAngle = angle;
-        if (showSkeletonRef.current && visibleMarkersRef.current.arms) {
+        if (appModeRef.current === 'mechanics' && showSkeletonRef.current && visibleMarkersRef.current.arms) {
           drawAngle(ctx, rightElbow, angle);
         }
       }
@@ -1248,7 +1248,7 @@ export function PoseDetector({
       const angle = calculateAngle(leftShoulder, leftElbow, leftWrist);
       if (angle !== null) {
         lAngle = angle;
-        if (showSkeletonRef.current && visibleMarkersRef.current.arms) {
+        if (appModeRef.current === 'mechanics' && showSkeletonRef.current && visibleMarkersRef.current.arms) {
           drawAngle(ctx, leftElbow, angle);
         }
       }
@@ -1266,7 +1266,7 @@ export function PoseDetector({
       const angle = calculateAngle(rightHip, rightKnee, rightAnkle);
       if (angle !== null) {
         rLegAngle = angle;
-        if (showSkeletonRef.current && visibleMarkersRef.current.legs) {
+        if (appModeRef.current === 'mechanics' && showSkeletonRef.current && visibleMarkersRef.current.legs) {
           drawAngle(ctx, rightKnee, angle);
         }
       }
@@ -1276,7 +1276,7 @@ export function PoseDetector({
       const angle = calculateAngle(leftHip, leftKnee, leftAnkle);
       if (angle !== null) {
         lLegAngle = angle;
-        if (showSkeletonRef.current && visibleMarkersRef.current.legs) {
+        if (appModeRef.current === 'mechanics' && showSkeletonRef.current && visibleMarkersRef.current.legs) {
           drawAngle(ctx, leftKnee, angle);
         }
       }
@@ -1426,7 +1426,7 @@ export function PoseDetector({
       // Analysis just finished (or is showing its last result) - keep the
       // full swept trajectory drawn as a solid line instead of the live
       // decaying trail, so the completed pitch's path stays on screen.
-      if (showTrajectoryRef.current && analyzedTrajectoryRef.current.length > 1) {
+      if (appModeRef.current === 'mechanics' && showTrajectoryRef.current && analyzedTrajectoryRef.current.length > 1) {
         ctx.beginPath();
         ctx.moveTo(analyzedTrajectoryRef.current[0].x, analyzedTrajectoryRef.current[0].y);
         for (let i = 1; i < analyzedTrajectoryRef.current.length; i++) {
@@ -1436,7 +1436,7 @@ export function PoseDetector({
         ctx.lineWidth = 3;
         ctx.stroke();
       }
-    } else if (showTrajectoryRef.current) {
+    } else if (appModeRef.current === 'mechanics' && showTrajectoryRef.current) {
       // Default track right wrist
       if (rightWrist && rightWrist.score && rightWrist.score > 0.4) {
         wristTrajectory.current.push({ x: rightWrist.x, y: rightWrist.y });
@@ -3726,7 +3726,13 @@ export function PoseDetector({
           </>
           )}
 
-          {/* Top Right Quick Settings Toggles Overlay (Compact HUD Row) */}
+          {/* Top Right Quick Settings Toggles Overlay (Compact HUD Row) -
+              Skeleton/Trajectory are Mechanics Tracker only: Pitch Tracker
+              and Split Test don't draw them at all (see the appMode check
+              on showSkeletonRef/showTrajectoryRef above), so the toggle
+              buttons are removed there too rather than left sitting on
+              screen turned off. */}
+          {appMode === 'mechanics' && (
           <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-1.5">
           <div className="flex items-center gap-1.5">
             {setShowSkeleton && (
@@ -3765,6 +3771,7 @@ export function PoseDetector({
               canvas (see drawPitchStatsOverlay) rather than as DOM elements
               here, so they show up in recordings too. */}
           </div>
+          )}
 
           {/* Bottom Floating Heads-Up Control Bar - draggable via the grip handle */}
           <div

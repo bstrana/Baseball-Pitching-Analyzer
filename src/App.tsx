@@ -1546,10 +1546,15 @@ export default function App() {
 
                 {activeModalTab === 'overlays' && (
                   <div className="space-y-4">
-                    <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                    {appMode !== 'mechanics' && (
+                      <p className="text-[11px] text-amber-400 bg-amber-950/20 border border-amber-500/30 rounded-lg px-3 py-2">
+                        Skeleton Tracking and Motion Trajectory are Mechanics Tracker only - switch to that mode to use them.
+                      </p>
+                    )}
+                    <div className={`bg-slate-950/30 p-4 rounded-xl border border-slate-800 ${appMode !== 'mechanics' ? 'opacity-50 pointer-events-none' : ''}`}>
                       <div className="flex items-center justify-between mb-1">
                         <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Skeletal Tracker</h4>
-                        <button 
+                        <button
                           onClick={() => setShowSkeleton(!showSkeleton)}
                           className="focus:outline-none cursor-pointer"
                         >
@@ -1557,7 +1562,7 @@ export default function App() {
                         </button>
                       </div>
                       <p className="text-[11px] text-slate-400 mb-4">Overlay high-frequency joint markers and wireframe skeletal links on top of the live video feed.</p>
-                      
+
                       {showSkeleton && (
                         <div className="bg-slate-900/40 border border-slate-800/80 rounded-lg p-3 space-y-3 shadow-inner">
                           <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider mb-1">Visible Segments</p>
@@ -1597,10 +1602,10 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                    <div className={`bg-slate-950/30 p-4 rounded-xl border border-slate-800 ${appMode !== 'mechanics' ? 'opacity-50 pointer-events-none' : ''}`}>
                       <div className="flex items-center justify-between mb-1">
                         <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Motion Trajectory Path</h4>
-                        <button 
+                        <button
                           onClick={() => setShowTrajectory(!showTrajectory)}
                           className="focus:outline-none cursor-pointer"
                         >
