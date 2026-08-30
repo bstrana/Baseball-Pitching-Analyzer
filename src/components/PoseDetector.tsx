@@ -3475,17 +3475,10 @@ export function PoseDetector({
       {isLoaded && !error && (
         <>
           {/* Top Left Status Overlay - the ANALYSIS ACTIVE/FEED PAUSED indicator
-              itself now lives in the top nav bar (see onAnalysisStatusChange) */}
+              itself now lives in the top nav bar (see onAnalysisStatusChange).
+              The WEBCAM/UPLOAD + camera-view badge that used to sit here has
+              been removed to free up screen space. */}
           <div className="absolute top-3 left-3 z-20 flex flex-col gap-1.5 pointer-events-none">
-            <div className="px-2.5 py-1.5 bg-black/80 backdrop-blur-md border border-slate-700/50 rounded-lg flex items-center gap-2 shadow-lg">
-              <span className="text-[9px] font-mono text-slate-400 px-1.5 py-0.5 bg-slate-800/80 rounded border border-slate-700/50 uppercase">
-                {feedSource === 'camera' ? 'WEBCAM' : feedSource === 'demo' ? 'DEMO FILE' : 'UPLOAD'}
-              </span>
-              <span className="text-[9px] font-mono text-sky-400 px-1.5 py-0.5 bg-slate-800/80 rounded border border-slate-700/50 uppercase">
-                {cameraView} View
-              </span>
-            </div>
-
             {appMode === 'pitching' && showStrikeZoneRef.current && !strikeZoneLocked && (
               <div className="px-2.5 py-1 bg-rose-500/10 border border-rose-500/30 rounded text-[9px] text-rose-400 font-mono tracking-wide uppercase shadow shadow-rose-950/25">
                 ✦ Drag zone / corners to calibrate; click/tap to plot pitch
