@@ -6,7 +6,32 @@
     <title>Baseball Mechanics Analyzer</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Static YBC splash shown while the JS bundle parses and Keycloak
+           initializes - main.tsx's renderApp() replaces this the moment
+           the app is ready. Kept in sync with src/components/SplashScreen.tsx. -->
+      <div class="fixed inset-0 flex flex-col items-center justify-center gap-5 bg-slate-950">
+        <div class="relative">
+          <svg width="88" height="88" viewBox="0 0 100 100" role="img" aria-label="YBC logo">
+            <defs>
+              <linearGradient id="ybc-boot-grad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#38bdf8" />
+                <stop offset="100%" stop-color="#0284c7" />
+              </linearGradient>
+            </defs>
+            <circle cx="50" cy="50" r="47" fill="url(#ybc-boot-grad)" stroke="#0c4a6e" stroke-width="2" />
+            <path d="M 12 32 A 42 42 0 0 0 12 68" fill="none" stroke="#e0f2fe" stroke-width="1.5" stroke-dasharray="3 4" opacity="0.55" />
+            <path d="M 88 32 A 42 42 0 0 1 88 68" fill="none" stroke="#e0f2fe" stroke-width="1.5" stroke-dasharray="3 4" opacity="0.55" />
+            <text x="50" y="61" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="32" letter-spacing="1" fill="#ffffff">YBC</text>
+          </svg>
+          <div class="absolute -inset-2 rounded-full border-2 border-sky-500/30 border-t-sky-400 animate-spin"></div>
+        </div>
+        <div class="text-center">
+          <p class="text-sm font-bold text-white uppercase tracking-[0.2em]">Your Ball Club</p>
+          <p class="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Loading...</p>
+        </div>
+      </div>
+    </div>
     <script src="/env-config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
