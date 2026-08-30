@@ -1,3 +1,10 @@
+## 1.2.20
+
+* Removed the WEBCAM/SIDE VIEW source badge from the top-left corner
+  of the video canvas - that info was already available in
+  Settings > Camera and cluttered the corner shared with the
+  strike-zone calibration hint.
+
 ## 1.2.19
 
 * Removed the small logo icon from the top-left nav bar and added a
