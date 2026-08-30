@@ -1,46 +1,9 @@
 // YBC (Your Ball Club) home-plate badge logo, shared between this component
 // and the static pre-React splash markup in index.html so the two look
 // identical and the transition between them is seamless once the app
-// finishes booting.
+// finishes booting. The asset lives at public/ybc-logo.svg.
 export function YbcMark({ size = 96 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 200 200" role="img" aria-label="YBC logo">
-      <polygon
-        points="30,24 170,24 170,100 100,176 30,100"
-        fill="#ffffff"
-        stroke="#dd6b26"
-        strokeWidth="7"
-        strokeLinejoin="round"
-      />
-      <text
-        x="102"
-        y="126"
-        textAnchor="middle"
-        fontFamily="Arial, Helvetica, sans-serif"
-        fontWeight="900"
-        fontSize="68"
-        letterSpacing="-2"
-        fill="#2b1810"
-      >
-        YBC
-      </text>
-      <text
-        x="99"
-        y="122"
-        textAnchor="middle"
-        fontFamily="Arial, Helvetica, sans-serif"
-        fontWeight="900"
-        fontSize="68"
-        letterSpacing="-2"
-        fill="#dd6b26"
-        stroke="#2b1810"
-        strokeWidth="2.5"
-        paintOrder="stroke fill"
-      >
-        YBC
-      </text>
-    </svg>
-  );
+  return <img src="/ybc-logo.svg" width={size} height={size} alt="YBC logo" />;
 }
 
 // Full-screen splash shown while the app is booting (Keycloak init, initial
