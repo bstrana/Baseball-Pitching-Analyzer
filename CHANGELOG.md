@@ -1,3 +1,10 @@
+## 1.2.19
+
+* Removed the small logo icon from the top-left nav bar and added a
+  branded YBC splash screen (white background, the real YBC home-plate
+  logo, and a sliding line loading indicator) shown while the app boots
+  and while the Pose Tracker/analyzer bundle loads.
+
 ## 1.2.18
 
 * Skeleton Tracking and Motion Trajectory Path are back to Mechanics
