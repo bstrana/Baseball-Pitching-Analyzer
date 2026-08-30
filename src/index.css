@@ -19,3 +19,31 @@
     height: 100dvh;
   }
 }
+
+/* Indeterminate loading line for the YBC splash screen - a moving
+   highlight sliding across a track, used instead of a spinner. Defined
+   here (rather than inline) so the static pre-React splash in index.html
+   and SplashScreen.tsx render an identical animation. */
+.ybc-loading-line {
+  position: relative;
+  overflow: hidden;
+}
+
+.ybc-loading-line::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, #dd6b26, transparent);
+  animation: ybc-loading-line-move 1.4s ease-in-out infinite;
+}
+
+@keyframes ybc-loading-line-move {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}

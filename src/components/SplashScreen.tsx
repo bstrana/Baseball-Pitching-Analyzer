@@ -13,15 +13,13 @@ export function YbcMark({ size = 96 }: { size?: number }) {
 // "Loading..." text.
 export function SplashScreen({ label = 'Loading...' }: { label?: string }) {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-slate-950">
-      <div className="relative">
-        <YbcMark size={88} />
-        <div className="absolute -inset-2 rounded-full border-2 border-orange-500/30 border-t-orange-400 animate-spin" />
-      </div>
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-white">
+      <YbcMark size={88} />
       <div className="text-center">
-        <p className="text-sm font-bold text-white uppercase tracking-[0.2em]">Your Ball Club</p>
-        <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">{label}</p>
+        <p className="text-sm font-bold text-slate-900 uppercase tracking-[0.2em]">Your Ball Club</p>
+        <p className="text-[10px] text-slate-400 uppercase tracking-widest mt-1">{label}</p>
       </div>
+      <div className="ybc-loading-line w-36 h-1 rounded-full bg-slate-200" />
     </div>
   );
 }
