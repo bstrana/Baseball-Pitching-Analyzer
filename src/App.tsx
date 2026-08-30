@@ -3,6 +3,7 @@ import type { PoseMetrics } from './components/PoseDetector';
 import { PitchTracker, PitchLog } from './components/PitchTracker';
 import { PitchVelocityChart } from './components/PitchVelocityChart';
 import { SplitTestTracker, SplitTestLog } from './components/SplitTestTracker';
+import { SplashScreen } from './components/SplashScreen';
 
 // Lazy-loaded: PoseDetector pulls in @tensorflow/tfjs + pose-detection, and
 // KinematicChart pulls in recharts - both are heavy and only needed once the
@@ -14,7 +15,7 @@ const KinematicChart = lazy(() =>
   import('./components/KinematicChart').then(m => ({ default: m.KinematicChart }))
 );
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, AppMode, SplitTestGroup, SplitTestPitch } from './types';
-import { Activity, Crosshair, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb, Play, StopCircle, MapPin, Clock, FileText, DraftingCompass, GripVertical, LayoutPanelTop, GitCompare } from 'lucide-react';
+import { Activity, ToggleLeft, ToggleRight, Video, Target, Settings, X, User, Sliders, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Download, LogOut, Ruler, RefreshCw, Users, Plus, Trash2, Save, AlertCircle, Usb, Play, StopCircle, MapPin, Clock, FileText, DraftingCompass, GripVertical, LayoutPanelTop, GitCompare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { keycloak, keycloakEnabled } from './auth';
 import { Player, listPlayers, createPlayer, updatePlayer, deletePlayer, saveMechanicsSession, savePitchSession, saveSplitTestSession, getPlayerSessionCount, getPlayerSessionCounts } from './pocketbase';
@@ -751,10 +752,6 @@ export default function App() {
         mobileChromeExpanded ? 'max-lg:landscape:h-16' : 'max-lg:landscape:h-0 max-lg:landscape:border-b-0 max-lg:landscape:overflow-hidden'
       }`}>
         <div className="flex items-center gap-3 sm:gap-4">
-          <div className="w-8 h-8 bg-sky-500 rounded flex items-center justify-center">
-            <Crosshair className="w-5 h-5 text-white" />
-          </div>
-          <div className="h-6 w-px bg-slate-700 mx-1 sm:mx-2 hidden sm:block"></div>
           <span className="items-center gap-2 text-[10px] sm:text-xs font-mono px-2 py-1 bg-slate-800 rounded border border-slate-700 hidden sm:flex">
             <span className="relative flex h-2 w-2 shrink-0">
               <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${analysisPaused ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
@@ -881,11 +878,7 @@ export default function App() {
           <div className="flex-1 relative bg-black flex items-center justify-center p-0 lg:p-4 min-h-0">
             <div className="w-full h-full relative lg:rounded-xl overflow-hidden lg:border lg:border-slate-800 lg:shadow-2xl bg-slate-950 flex items-center justify-center">
                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40 pointer-events-none z-10"></div>
-               <Suspense fallback={
-                 <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-sm">
-                   Loading analyzer...
-                 </div>
-               }>
+               <Suspense fallback={<SplashScreen label="Loading analyzer..." />}>
                <PoseDetector
                  onMetricsUpdate={setMetrics}
                  onKinematicsUpdate={setLiveKinematicsData}
