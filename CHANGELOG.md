@@ -1,3 +1,12 @@
+## 1.2.18
+
+* Skeleton Tracking and Motion Trajectory Path are back to Mechanics
+  Tracker only - their on-canvas toggle buttons are now removed
+  entirely from Pitch Tracker and Split Test (rather than left sitting
+  there turned off) to free up screen space, and switching modes with
+  either turned on in Mechanics Tracker no longer carries the overlay
+  along into Pitch Tracker or Split Test.
+
 ## 1.2.17
 
 * Added Split Test Mode to the Pitch Tracker - a third mode for comparing
