@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
-import type { PoseMetrics } from './components/PoseDetector';
+import type { PoseMetrics, AnalysisSummary } from './components/PoseDetector';
 import { PitchCalibration, PitchTypeSelector, PitchLog } from './components/PitchTracker';
 import { PitchVelocityChart } from './components/PitchVelocityChart';
 import { SplitTestTracker, SplitTestLog } from './components/SplitTestTracker';
@@ -210,6 +210,12 @@ export default function App() {
     speeds: { hip: 0, shoulder: 0, elbow: 0, wrist: 0 }
   });
   const [liveKinematicsData, setLiveKinematicsData] = useState<KinematicFrame[]>([]);
+  // Frozen peak values from a completed Analyze sweep - preferred over the
+  // live/instantaneous `metrics` above when saving a Mechanics Tracker
+  // session, since they reflect the actual analyzed pitch rather than
+  // whatever the feed happened to show at the moment Save was clicked. Null
+  // whenever no Analyze sweep has been run (or its range was since cleared).
+  const [analysisSummary, setAnalysisSummary] = useState<AnalysisSummary | null>(null);
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [showTrajectory, setShowTrajectory] = useState(true);
   const [speedGunConnected, setSpeedGunConnected] = useState(false);
@@ -557,6 +563,27 @@ export default function App() {
 
   // Both only reachable from the End Session modal - nothing can be saved
   // or exported until the session is actually ended.
+  // Prefer the frozen peak speeds from a completed Analyze sweep over the
+  // live/instantaneous `metrics` readout - `metrics` is whatever the feed
+  // happened to show at the exact moment the session was ended (idle
+  // standing, most likely), while analysisSummary reflects the actual
+  // analyzed pitch. Only the speeds are replaced - there's no peak-tracking
+  // for the angle fields (arm/leg/hip-shoulder), so those still come from
+  // the live snapshot. Shared by both the DB save and the JSON export so
+  // neither one saves/exports the weaker of the two.
+  const mechanicsMetricsForSession = (): PoseMetrics =>
+    analysisSummary
+      ? {
+          ...metrics,
+          speeds: {
+            hip: analysisSummary.peakHip,
+            shoulder: analysisSummary.peakShoulder,
+            elbow: analysisSummary.peakElbowPx,
+            wrist: analysisSummary.peakWristPx,
+          },
+        }
+      : metrics;
+
   const handleEndSessionExport = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({
       player: selectedPlayer?.name ?? null,
@@ -567,7 +594,7 @@ export default function App() {
       endedAt: new Date(),
       durationSeconds: sessionElapsedSeconds,
       ...(appMode === 'mechanics'
-        ? { cameraView, metrics, kinematicsData: liveKinematicsData }
+        ? { cameraView, metrics: mechanicsMetricsForSession(), kinematicsData: liveKinematicsData }
         : appMode === 'pitching'
         ? { strikeZoneConfig, pitches }
         : { splitTestGroups, splitTestPitches }),
@@ -593,7 +620,7 @@ export default function App() {
         await saveMechanicsSession({
           player: selectedPlayerId,
           camera_view: cameraView,
-          metrics,
+          metrics: mechanicsMetricsForSession(),
           kinematics_data: liveKinematicsData,
           notes: sessionNote,
           location: sessionLocation,
@@ -887,6 +914,7 @@ export default function App() {
                <PoseDetector
                  onMetricsUpdate={setMetrics}
                  onKinematicsUpdate={setLiveKinematicsData}
+                 onAnalysisSummaryUpdate={setAnalysisSummary}
                  showSkeleton={showSkeleton}
                  showTrajectory={showTrajectory} 
                  cameraView={cameraView} 

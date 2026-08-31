@@ -110,6 +110,18 @@ export interface PoseMetrics {
   };
 }
 
+// Frozen peak values from a completed Analyze sweep (see runAnalysis) - more
+// trustworthy than the live/instantaneous PoseMetrics readout for saving,
+// since it reflects the actual analyzed pitch rather than whatever the feed
+// happened to show at the moment "Save Session" was clicked.
+export interface AnalysisSummary {
+  peakHip: number;
+  peakShoulder: number;
+  peakElbowPx: number;
+  peakWristPx: number;
+  strideCorePixels: number;
+}
+
 const ZERO_METRICS: PoseMetrics = {
   rightArmAngle: 0,
   leftArmAngle: 0,
@@ -122,6 +134,7 @@ const ZERO_METRICS: PoseMetrics = {
 interface PoseDetectorProps {
   onMetricsUpdate: (metrics: PoseMetrics) => void;
   onKinematicsUpdate?: (data: KinematicFrame[]) => void;
+  onAnalysisSummaryUpdate?: (summary: AnalysisSummary | null) => void;
   showSkeleton: boolean;
   showTrajectory: boolean;
   cameraView: 'side' | 'front' | 'back';
@@ -216,6 +229,7 @@ interface PoseDetectorProps {
 export function PoseDetector({
   onMetricsUpdate,
   onKinematicsUpdate,
+  onAnalysisSummaryUpdate,
   showSkeleton,
   showTrajectory, 
   cameraView,
@@ -308,6 +322,7 @@ export function PoseDetector({
   const cameraViewRef = useRef(cameraView);
   const onConfigChangeRef = useRef(onConfigChange);
   const onKinematicsUpdateRef = useRef(onKinematicsUpdate);
+  const onAnalysisSummaryUpdateRef = useRef(onAnalysisSummaryUpdate);
   const kinematicsEmitCounterRef = useRef(0);
   const metricsEmitCounterRef = useRef(0);
   const defaultVisibleMarkers = {
@@ -370,13 +385,14 @@ export function PoseDetector({
   // is the frozen snapshot shown in the HUD bar once it completes.
   const analyzedTrajectoryRef = useRef<{ x: number; y: number }[]>([]);
   const sweepPeaksRef = useRef({ hip: 0, shoulder: 0, elbow: 0, wrist: 0, strideCorePixels: 0 });
-  const [analysisSummary, setAnalysisSummary] = useState<{
-    peakHip: number;
-    peakShoulder: number;
-    peakElbowPx: number;
-    peakWristPx: number;
-    strideCorePixels: number;
-  } | null>(null);
+  const [analysisSummary, setAnalysisSummaryState] = useState<AnalysisSummary | null>(null);
+  // Also notifies the parent (App.tsx), which prefers these frozen sweep
+  // peaks over the live instantaneous PoseMetrics when saving a session -
+  // see onAnalysisSummaryUpdate.
+  const setAnalysisSummary = (summary: AnalysisSummary | null) => {
+    setAnalysisSummaryState(summary);
+    onAnalysisSummaryUpdateRef.current?.(summary);
+  };
 
   // Fullscreen - most useful on a phone in landscape, where it also hides
   // the browser's own address bar/toolbar, unlike our own on-canvas HUD
@@ -469,6 +485,7 @@ export function PoseDetector({
     cameraViewRef.current = cameraView;
     onConfigChangeRef.current = onConfigChange;
     onKinematicsUpdateRef.current = onKinematicsUpdate;
+    onAnalysisSummaryUpdateRef.current = onAnalysisSummaryUpdate;
     feedSourceRef.current = feedSource;
     showSkeletonRef.current = showSkeleton;
     showTrajectoryRef.current = showTrajectory;
