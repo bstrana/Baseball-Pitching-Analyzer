@@ -105,7 +105,7 @@ export function PitchVelocityChart({ pitches, showSpeeds }: PitchVelocityChartPr
       .sort((a, b) => b.total - a.total);
 
     return (
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 @container">
         <div className="flex items-center justify-between mb-3">
           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1.5">
             <BarChart3 className="w-4 h-4 text-sky-400" />
@@ -114,7 +114,7 @@ export function PitchVelocityChart({ pitches, showSpeeds }: PitchVelocityChartPr
           <span className="text-[9px] text-slate-500 font-mono">{pitches.length} pitches</span>
         </div>
 
-        <div className="h-44 w-full">
+        <div className="h-44 @lg:h-28 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={zoneMixData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
@@ -162,7 +162,7 @@ export function PitchVelocityChart({ pitches, showSpeeds }: PitchVelocityChartPr
   const typesThrown = Array.from(new Set(data.map((d) => d.type)));
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 @container">
       <div className="flex items-center justify-between mb-3">
         <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1.5">
           <TrendingUp className="w-4 h-4 text-sky-400" />
@@ -171,7 +171,7 @@ export function PitchVelocityChart({ pitches, showSpeeds }: PitchVelocityChartPr
         <span className="text-[9px] text-slate-500 font-mono">avg {avgVelocity} mph</span>
       </div>
 
-      <div className="h-44 w-full">
+      <div className="h-44 @lg:h-28 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />

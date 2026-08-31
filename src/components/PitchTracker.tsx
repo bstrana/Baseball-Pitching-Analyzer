@@ -58,7 +58,7 @@ function PitchCalibrationBase({
   setPitcherHandedness,
 }: PitchCalibrationProps) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 @container">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Sliders className="w-5 h-5 text-sky-400" />
@@ -111,95 +111,101 @@ function PitchCalibrationBase({
         </div>
       </div>
 
-      <div>
-        <div className="flex justify-between items-center mb-1">
-          <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Pitch Velocity (MPH)</label>
-          <span className="text-sm font-mono text-sky-400 font-bold">{currentPitchSpeed} MPH</span>
-        </div>
-        <input
-          type="range"
-          min="50"
-          max="105"
-          value={currentPitchSpeed}
-          onChange={(e) => setCurrentPitchSpeed(Number(e.target.value))}
-          className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-        />
-        <div className="flex justify-between text-[9px] text-slate-500 font-mono mt-1">
-          <span>50 MPH</span>
-          <span>85 MPH</span>
-          <span>105 MPH</span>
-        </div>
-      </div>
-
-      {/* Calibration Sliders */}
-      <div className="border-t border-slate-800/80 mt-4 pt-4 space-y-3.5">
-        <div className="flex items-center gap-1.5 mb-1">
-          <Sliders className="w-4 h-4 text-slate-400" />
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Adjust Zone Overlay Position</span>
-        </div>
-
-        <div>
-          <div className="flex justify-between text-[9px] text-slate-400 font-mono mb-1">
-            <span>Horizontal Offset (X)</span>
-            <span>{Math.round(config.x * 100)}%</span>
+      {/* Velocity slider and zone calibration sliders stack vertically in the
+          narrow sidebar, but sit side by side once this panel has room (e.g.
+          dragged into the bottom dock), so it doesn't need nearly as much
+          vertical space there. */}
+      <div className="@xl:flex @xl:gap-6 @xl:items-start">
+        <div className="@xl:flex-1 @xl:min-w-0">
+          <div className="flex justify-between items-center mb-1">
+            <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Pitch Velocity (MPH)</label>
+            <span className="text-sm font-mono text-sky-400 font-bold">{currentPitchSpeed} MPH</span>
           </div>
           <input
             type="range"
-            min="0.05"
-            max="0.8"
-            step="0.01"
-            value={config.x}
-            onChange={(e) => onConfigChange({ ...config, x: Number(e.target.value) })}
+            min="50"
+            max="105"
+            value={currentPitchSpeed}
+            onChange={(e) => setCurrentPitchSpeed(Number(e.target.value))}
             className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
           />
-        </div>
-
-        <div>
-          <div className="flex justify-between text-[9px] text-slate-400 font-mono mb-1">
-            <span>Vertical Offset (Y)</span>
-            <span>{Math.round(config.y * 100)}%</span>
+          <div className="flex justify-between text-[9px] text-slate-500 font-mono mt-1">
+            <span>50 MPH</span>
+            <span>85 MPH</span>
+            <span>105 MPH</span>
           </div>
-          <input
-            type="range"
-            min="0.05"
-            max="0.8"
-            step="0.01"
-            value={config.y}
-            onChange={(e) => onConfigChange({ ...config, y: Number(e.target.value) })}
-            className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-          />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        {/* Calibration Sliders */}
+        <div className="border-t border-slate-800/80 mt-4 pt-4 space-y-3.5 @xl:border-t-0 @xl:border-l @xl:pl-6 @xl:mt-0 @xl:pt-0 @xl:flex-1 @xl:min-w-0">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Sliders className="w-4 h-4 text-slate-400" />
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Adjust Zone Overlay Position</span>
+          </div>
+
           <div>
             <div className="flex justify-between text-[9px] text-slate-400 font-mono mb-1">
-              <span>Width</span>
-              <span>{Math.round(config.width * 100)}%</span>
+              <span>Horizontal Offset (X)</span>
+              <span>{Math.round(config.x * 100)}%</span>
             </div>
             <input
               type="range"
-              min="0.1"
-              max="0.5"
+              min="0.05"
+              max="0.8"
               step="0.01"
-              value={config.width}
-              onChange={(e) => onConfigChange({ ...config, width: Number(e.target.value) })}
+              value={config.x}
+              onChange={(e) => onConfigChange({ ...config, x: Number(e.target.value) })}
               className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
             />
           </div>
+
           <div>
             <div className="flex justify-between text-[9px] text-slate-400 font-mono mb-1">
-              <span>Height</span>
-              <span>{Math.round(config.height * 100)}%</span>
+              <span>Vertical Offset (Y)</span>
+              <span>{Math.round(config.y * 100)}%</span>
             </div>
             <input
               type="range"
-              min="0.1"
-              max="0.6"
+              min="0.05"
+              max="0.8"
               step="0.01"
-              value={config.height}
-              onChange={(e) => onConfigChange({ ...config, height: Number(e.target.value) })}
+              value={config.y}
+              onChange={(e) => onConfigChange({ ...config, y: Number(e.target.value) })}
               className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="flex justify-between text-[9px] text-slate-400 font-mono mb-1">
+                <span>Width</span>
+                <span>{Math.round(config.width * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.1"
+                max="0.5"
+                step="0.01"
+                value={config.width}
+                onChange={(e) => onConfigChange({ ...config, width: Number(e.target.value) })}
+                className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+              />
+            </div>
+            <div>
+              <div className="flex justify-between text-[9px] text-slate-400 font-mono mb-1">
+                <span>Height</span>
+                <span>{Math.round(config.height * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.1"
+                max="0.6"
+                step="0.01"
+                value={config.height}
+                onChange={(e) => onConfigChange({ ...config, height: Number(e.target.value) })}
+                className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -216,13 +222,16 @@ interface PitchTypeSelectorProps {
 
 function PitchTypeSelectorBase({ currentPitchType, setCurrentPitchType }: PitchTypeSelectorProps) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 @container">
       <div className="flex items-center gap-2 mb-4">
         <Target className="w-5 h-5 text-sky-400" />
         <h3 className="font-semibold text-sm text-white">PITCH TYPE SELECTOR</h3>
       </div>
 
-      <div className="space-y-3">
+      {/* The 3 categories stack vertically in the narrow sidebar, but sit
+          side by side once this panel has room (e.g. dragged into the
+          bottom dock) since each category is already a single row. */}
+      <div className="space-y-3 @lg:space-y-0 @lg:grid @lg:grid-cols-3 @lg:gap-3">
         {PITCH_CATEGORY_ORDER.map((category) => {
           const typesInCategory = PITCH_TYPES.filter((type) => PITCH_TYPE_INFO[type].category === category);
           return (
