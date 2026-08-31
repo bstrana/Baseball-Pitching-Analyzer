@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import type { PoseMetrics } from './components/PoseDetector';
-import { PitchTracker, PitchLog } from './components/PitchTracker';
+import { PitchCalibration, PitchTypeSelector, PitchLog } from './components/PitchTracker';
 import { PitchVelocityChart } from './components/PitchVelocityChart';
 import { SplitTestTracker, SplitTestLog } from './components/SplitTestTracker';
 import { SplashScreen } from './components/SplashScreen';
@@ -272,15 +272,16 @@ export default function App() {
   // the velocity chart the full canvas width once a lot of pitches are
   // logged and it gets crowded in the narrow sidebar.
   type DockZone = 'left' | 'right' | 'bottom';
-  type DockWidgetId = 'pitchLog' | 'pitchCalibration' | 'velocityChart';
+  type DockWidgetId = 'pitchLog' | 'pitchCalibration' | 'pitchTypeSelector' | 'velocityChart';
   const DOCK_WIDGET_TITLES: Record<DockWidgetId, string> = {
     pitchLog: 'Session Pitch Log',
     pitchCalibration: 'Pitch Calibration',
+    pitchTypeSelector: 'Pitch Type Selector',
     velocityChart: 'Velocity Chart',
   };
   const [dockLayout, setDockLayout] = useState<Record<DockZone, DockWidgetId[]>>({
     left: ['pitchLog'],
-    right: ['pitchCalibration', 'velocityChart'],
+    right: ['pitchCalibration', 'pitchTypeSelector', 'velocityChart'],
     bottom: [],
   });
   const [dockDragWidget, setDockDragWidget] = useState<DockWidgetId | null>(null);
@@ -685,8 +686,7 @@ export default function App() {
         );
       case 'pitchCalibration':
         return (
-          <PitchTracker
-            pitches={pitches}
+          <PitchCalibration
             config={strikeZoneConfig}
             onConfigChange={setStrikeZoneConfig}
             showStrikeZone={showStrikeZone}
@@ -695,14 +695,19 @@ export default function App() {
             setStrikeZoneLocked={setStrikeZoneLocked}
             showPitchSpeeds={showPitchSpeeds}
             setShowPitchSpeeds={setShowPitchSpeeds}
-            currentPitchType={currentPitchType}
-            setCurrentPitchType={setCurrentPitchType}
             currentPitchSpeed={currentPitchSpeed}
             setCurrentPitchSpeed={setCurrentPitchSpeed}
             targetMode={targetMode}
             setTargetMode={setTargetMode}
             pitcherHandedness={pitcherHandedness}
             setPitcherHandedness={setPitcherHandedness}
+          />
+        );
+      case 'pitchTypeSelector':
+        return (
+          <PitchTypeSelector
+            currentPitchType={currentPitchType}
+            setCurrentPitchType={setCurrentPitchType}
           />
         );
       case 'velocityChart':

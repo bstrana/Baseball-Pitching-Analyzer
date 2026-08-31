@@ -24,8 +24,7 @@ function getMissResultStyle(result: Pitch['missResult']) {
   }
 }
 
-interface PitchTrackerProps {
-  pitches: Pitch[];
+interface PitchCalibrationProps {
   config: StrikeZoneConfig;
   onConfigChange: (config: StrikeZoneConfig) => void;
   showStrikeZone: boolean;
@@ -34,8 +33,6 @@ interface PitchTrackerProps {
   setStrikeZoneLocked: (locked: boolean) => void;
   showPitchSpeeds: boolean;
   setShowPitchSpeeds: (show: boolean) => void;
-  currentPitchType: PitchType;
-  setCurrentPitchType: (type: PitchType) => void;
   currentPitchSpeed: number;
   setCurrentPitchSpeed: (speed: number) => void;
   targetMode: boolean;
@@ -44,8 +41,7 @@ interface PitchTrackerProps {
   setPitcherHandedness: (handedness: PitcherHandedness) => void;
 }
 
-function PitchTrackerBase({
-  pitches,
+function PitchCalibrationBase({
   config,
   onConfigChange,
   showStrikeZone,
@@ -54,199 +50,210 @@ function PitchTrackerBase({
   setStrikeZoneLocked,
   showPitchSpeeds,
   setShowPitchSpeeds,
-  currentPitchType,
-  setCurrentPitchType,
   currentPitchSpeed,
   setCurrentPitchSpeed,
   targetMode,
   setTargetMode,
   pitcherHandedness,
   setPitcherHandedness,
-}: PitchTrackerProps) {
+}: PitchCalibrationProps) {
   return (
-    <div className="flex flex-col gap-5 h-full overflow-y-auto pr-1">
-      {/* Pitch Type Selector */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <Target className="w-5 h-5 text-sky-400" />
-            <h3 className="font-semibold text-sm text-white">PITCH CALIBRATION</h3>
-          </div>
-          <div className="flex items-center flex-wrap gap-1.5">
-            <button
-              onClick={() => setShowStrikeZone(!showStrikeZone)}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${showStrikeZone ? 'bg-sky-950/40 border-sky-500/50 text-sky-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
-            >
-              {showStrikeZone ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-              {showStrikeZone ? 'Zone Visible' : 'Zone Hidden'}
-            </button>
-            <button
-              onClick={() => setStrikeZoneLocked(!strikeZoneLocked)}
-              title={strikeZoneLocked
-                ? 'Zone locked - canvas clicks only plot pitches. Unlock to drag/resize the zone.'
-                : 'Zone unlocked - canvas clicks drag/resize the zone. Lock it once positioned to plot pitches instead.'}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${strikeZoneLocked ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
-            >
-              {strikeZoneLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-              {strikeZoneLocked ? 'Zone Locked' : 'Zone Unlocked'}
-            </button>
-            <button
-              onClick={() => setShowPitchSpeeds(!showPitchSpeeds)}
-              title={showPitchSpeeds ? 'Hide MPH on plotted pitches' : 'Show MPH on plotted pitches'}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${showPitchSpeeds ? 'bg-sky-950/40 border-sky-500/50 text-sky-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
-            >
-              <Gauge className="w-3.5 h-3.5" />
-              {showPitchSpeeds ? 'Speed On' : 'Speed Off'}
-            </button>
-            <button
-              onClick={() => setTargetMode(!targetMode)}
-              title={targetMode
-                ? 'Target Mode on - tap the video canvas to plant a target, then tap again where the pitch lands to grade it.'
-                : 'Target Mode off - tap the video canvas to plant a target before each pitch and grade misses against it.'}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${targetMode ? 'bg-amber-950/40 border-amber-500/50 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
-            >
-              <Crosshair className="w-3.5 h-3.5" />
-              {targetMode ? 'Target Mode On' : 'Target Mode Off'}
-            </button>
-            <button
-              onClick={() => setPitcherHandedness(pitcherHandedness === 'right' ? 'left' : 'right')}
-              title="Pitcher's throwing hand - only relabels Target Mode's glove side / arm side, doesn't change zone geometry."
-              className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border bg-slate-800 border-slate-700 text-slate-400 hover:text-white transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Throws {pitcherHandedness === 'right' ? 'R' : 'L'}
-            </button>
-          </div>
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Sliders className="w-5 h-5 text-sky-400" />
+          <h3 className="font-semibold text-sm text-white">PITCH CALIBRATION</h3>
         </div>
-
-        <div className="space-y-3">
-          <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold block">Select Pitch Type</label>
-          {PITCH_CATEGORY_ORDER.map((category) => {
-            const typesInCategory = PITCH_TYPES.filter((type) => PITCH_TYPE_INFO[type].category === category);
-            return (
-              <div key={category}>
-                <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest block mb-1">{category}</span>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {typesInCategory.map((type) => (
-                    <button
-                      key={type}
-                      onClick={() => setCurrentPitchType(type)}
-                      title={type}
-                      className={`py-1.5 px-1 rounded text-center border transition-all ${
-                        currentPitchType === type
-                          ? 'bg-sky-600 border-sky-400 text-white shadow-md shadow-sky-600/20'
-                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
-                      }`}
-                    >
-                      <span className="block text-xs font-bold leading-tight">{PITCH_TYPE_INFO[type].abbreviation}</span>
-                      <span className="block text-[9px] font-semibold leading-tight truncate opacity-80">{type}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+        <div className="flex items-center flex-wrap gap-1.5">
+          <button
+            onClick={() => setShowStrikeZone(!showStrikeZone)}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${showStrikeZone ? 'bg-sky-950/40 border-sky-500/50 text-sky-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
+          >
+            {showStrikeZone ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            {showStrikeZone ? 'Zone Visible' : 'Zone Hidden'}
+          </button>
+          <button
+            onClick={() => setStrikeZoneLocked(!strikeZoneLocked)}
+            title={strikeZoneLocked
+              ? 'Zone locked - canvas clicks only plot pitches. Unlock to drag/resize the zone.'
+              : 'Zone unlocked - canvas clicks drag/resize the zone. Lock it once positioned to plot pitches instead.'}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${strikeZoneLocked ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
+          >
+            {strikeZoneLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+            {strikeZoneLocked ? 'Zone Locked' : 'Zone Unlocked'}
+          </button>
+          <button
+            onClick={() => setShowPitchSpeeds(!showPitchSpeeds)}
+            title={showPitchSpeeds ? 'Hide MPH on plotted pitches' : 'Show MPH on plotted pitches'}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${showPitchSpeeds ? 'bg-sky-950/40 border-sky-500/50 text-sky-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
+          >
+            <Gauge className="w-3.5 h-3.5" />
+            {showPitchSpeeds ? 'Speed On' : 'Speed Off'}
+          </button>
+          <button
+            onClick={() => setTargetMode(!targetMode)}
+            title={targetMode
+              ? 'Target Mode on - tap the video canvas to plant a target, then tap again where the pitch lands to grade it.'
+              : 'Target Mode off - tap the video canvas to plant a target before each pitch and grade misses against it.'}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border transition-colors ${targetMode ? 'bg-amber-950/40 border-amber-500/50 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}
+          >
+            <Crosshair className="w-3.5 h-3.5" />
+            {targetMode ? 'Target Mode On' : 'Target Mode Off'}
+          </button>
+          <button
+            onClick={() => setPitcherHandedness(pitcherHandedness === 'right' ? 'left' : 'right')}
+            title="Pitcher's throwing hand - only relabels Target Mode's glove side / arm side, doesn't change zone geometry."
+            className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider border bg-slate-800 border-slate-700 text-slate-400 hover:text-white transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Throws {pitcherHandedness === 'right' ? 'R' : 'L'}
+          </button>
         </div>
       </div>
 
-      {/* Pitch Velocity & Zone Calibration */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div>
+        <div className="flex justify-between items-center mb-1">
+          <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Pitch Velocity (MPH)</label>
+          <span className="text-sm font-mono text-sky-400 font-bold">{currentPitchSpeed} MPH</span>
+        </div>
+        <input
+          type="range"
+          min="50"
+          max="105"
+          value={currentPitchSpeed}
+          onChange={(e) => setCurrentPitchSpeed(Number(e.target.value))}
+          className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+        />
+        <div className="flex justify-between text-[9px] text-slate-500 font-mono mt-1">
+          <span>50 MPH</span>
+          <span>85 MPH</span>
+          <span>105 MPH</span>
+        </div>
+      </div>
+
+      {/* Calibration Sliders */}
+      <div className="border-t border-slate-800/80 mt-4 pt-4 space-y-3.5">
+        <div className="flex items-center gap-1.5 mb-1">
+          <Sliders className="w-4 h-4 text-slate-400" />
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Adjust Zone Overlay Position</span>
+        </div>
+
         <div>
-          <div className="flex justify-between items-center mb-1">
-            <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Pitch Velocity (MPH)</label>
-            <span className="text-sm font-mono text-sky-400 font-bold">{currentPitchSpeed} MPH</span>
+          <div className="flex justify-between text-[9px] text-slate-400 font-mono mb-1">
+            <span>Horizontal Offset (X)</span>
+            <span>{Math.round(config.x * 100)}%</span>
           </div>
           <input
             type="range"
-            min="50"
-            max="105"
-            value={currentPitchSpeed}
-            onChange={(e) => setCurrentPitchSpeed(Number(e.target.value))}
+            min="0.05"
+            max="0.8"
+            step="0.01"
+            value={config.x}
+            onChange={(e) => onConfigChange({ ...config, x: Number(e.target.value) })}
             className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
           />
-          <div className="flex justify-between text-[9px] text-slate-500 font-mono mt-1">
-            <span>50 MPH</span>
-            <span>85 MPH</span>
-            <span>105 MPH</span>
-          </div>
         </div>
 
-        {/* Calibration Sliders */}
-        <div className="border-t border-slate-800/80 mt-4 pt-4 space-y-3.5">
-          <div className="flex items-center gap-1.5 mb-1">
-            <Sliders className="w-4 h-4 text-slate-400" />
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Adjust Zone Overlay Position</span>
+        <div>
+          <div className="flex justify-between text-[9px] text-slate-400 font-mono mb-1">
+            <span>Vertical Offset (Y)</span>
+            <span>{Math.round(config.y * 100)}%</span>
           </div>
+          <input
+            type="range"
+            min="0.05"
+            max="0.8"
+            step="0.01"
+            value={config.y}
+            onChange={(e) => onConfigChange({ ...config, y: Number(e.target.value) })}
+            className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+          />
+        </div>
 
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <div className="flex justify-between text-[9px] text-slate-400 font-mono mb-1">
-              <span>Horizontal Offset (X)</span>
-              <span>{Math.round(config.x * 100)}%</span>
+              <span>Width</span>
+              <span>{Math.round(config.width * 100)}%</span>
             </div>
             <input
               type="range"
-              min="0.05"
-              max="0.8"
+              min="0.1"
+              max="0.5"
               step="0.01"
-              value={config.x}
-              onChange={(e) => onConfigChange({ ...config, x: Number(e.target.value) })}
+              value={config.width}
+              onChange={(e) => onConfigChange({ ...config, width: Number(e.target.value) })}
               className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
             />
           </div>
-
           <div>
             <div className="flex justify-between text-[9px] text-slate-400 font-mono mb-1">
-              <span>Vertical Offset (Y)</span>
-              <span>{Math.round(config.y * 100)}%</span>
+              <span>Height</span>
+              <span>{Math.round(config.height * 100)}%</span>
             </div>
             <input
               type="range"
-              min="0.05"
-              max="0.8"
+              min="0.1"
+              max="0.6"
               step="0.01"
-              value={config.y}
-              onChange={(e) => onConfigChange({ ...config, y: Number(e.target.value) })}
+              value={config.height}
+              onChange={(e) => onConfigChange({ ...config, height: Number(e.target.value) })}
               className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
             />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="flex justify-between text-[9px] text-slate-400 font-mono mb-1">
-                <span>Width</span>
-                <span>{Math.round(config.width * 100)}%</span>
-              </div>
-              <input
-                type="range"
-                min="0.1"
-                max="0.5"
-                step="0.01"
-                value={config.width}
-                onChange={(e) => onConfigChange({ ...config, width: Number(e.target.value) })}
-                className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-            <div>
-              <div className="flex justify-between text-[9px] text-slate-400 font-mono mb-1">
-                <span>Height</span>
-                <span>{Math.round(config.height * 100)}%</span>
-              </div>
-              <input
-                type="range"
-                min="0.1"
-                max="0.6"
-                step="0.01"
-                value={config.height}
-                onChange={(e) => onConfigChange({ ...config, height: Number(e.target.value) })}
-                className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+export const PitchCalibration = React.memo(PitchCalibrationBase);
+
+interface PitchTypeSelectorProps {
+  currentPitchType: PitchType;
+  setCurrentPitchType: (type: PitchType) => void;
+}
+
+function PitchTypeSelectorBase({ currentPitchType, setCurrentPitchType }: PitchTypeSelectorProps) {
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-4">
+        <Target className="w-5 h-5 text-sky-400" />
+        <h3 className="font-semibold text-sm text-white">PITCH TYPE SELECTOR</h3>
+      </div>
+
+      <div className="space-y-3">
+        {PITCH_CATEGORY_ORDER.map((category) => {
+          const typesInCategory = PITCH_TYPES.filter((type) => PITCH_TYPE_INFO[type].category === category);
+          return (
+            <div key={category}>
+              <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest block mb-1">{category}</span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {typesInCategory.map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setCurrentPitchType(type)}
+                    title={type}
+                    className={`py-1.5 px-1 rounded text-center border transition-all ${
+                      currentPitchType === type
+                        ? 'bg-sky-600 border-sky-400 text-white shadow-md shadow-sky-600/20'
+                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+                    }`}
+                  >
+                    <span className="block text-xs font-bold leading-tight">{PITCH_TYPE_INFO[type].abbreviation}</span>
+                    <span className="block text-[9px] font-semibold leading-tight truncate opacity-80">{type}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export const PitchTypeSelector = React.memo(PitchTypeSelectorBase);
 
 interface PitchLogProps {
   pitches: Pitch[];
@@ -364,5 +371,3 @@ export function PitchLog({
     </div>
   );
 }
-
-export const PitchTracker = React.memo(PitchTrackerBase);
