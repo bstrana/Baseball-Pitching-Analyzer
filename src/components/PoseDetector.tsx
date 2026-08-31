@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn, Maximize, Minimize, MoveDiagonal2, DraftingCompass } from 'lucide-react';
+import { Camera, RefreshCw, Upload, Video, AlertCircle, Play, Pause, Aperture, Eye, EyeOff, Target, Sparkles, RefreshCcw, SkipForward, SkipBack, MousePointer, Slash, MoveRight, Circle, PenTool, Undo2, Trash2, Disc, History, Flag, X, MoreVertical, GripHorizontal, ZoomIn, Maximize, Minimize, MoveDiagonal2, DraftingCompass, Download } from 'lucide-react';
 import { Pitch, PitchType, StrikeZoneConfig, KinematicFrame, PitcherHandedness, AppMode, PITCH_TYPE_INFO, PITCH_TYPES, classifyPitch, classifyMiss, getTargetZoneLabel } from '../types';
 
 // Required to initialize the WebGL backend
@@ -283,6 +283,16 @@ export function PoseDetector({
   const [showPitchTypeMenu, setShowPitchTypeMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null);
+  // A separate, larger MoveNet variant (Thunder vs. the live loop's
+  // Lightning) used only for the offline Analyze sweep - loaded lazily on
+  // first use rather than upfront, since it's a bigger model download that
+  // most sessions (anyone just using live tracking) never need. Thunder is
+  // slower per-frame, which is why it isn't used for live tracking, but the
+  // Analyze sweep already steps through frames one at a time regardless of
+  // inference speed, so the extra accuracy is close to free there.
+  const [analysisDetector, setAnalysisDetector] = useState<poseDetection.PoseDetector | null>(null);
+  const [loadingAnalysisModel, setLoadingAnalysisModel] = useState(false);
+  const analysisDetectorLoadingRef = useRef<Promise<poseDetection.PoseDetector | null> | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
   const [isPaused, setIsPaused] = useState(false);
   const isPausedRef = useRef(false);
@@ -407,6 +417,12 @@ export function PoseDetector({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Overrides the default "Throw Rec #N" name for the next recording's
+  // onstop handler - set right before calling startRecording() from
+  // downloadAnalyzedClip so that auto-captured clip gets a name describing
+  // the analyzed range instead.
+  const pendingRecordingLabelRef = useRef<string | null>(null);
+  const [isCapturingClip, setIsCapturingClip] = useState(false);
   // Off-DOM canvas + its own redraw loop, used only while recording with the
   // digital zoom active (see startRecording) - never attached to the page.
   const zoomRecordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -780,14 +796,17 @@ export function PoseDetector({
         const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
         const url = URL.createObjectURL(blob);
 
+        const label = pendingRecordingLabelRef.current;
+        pendingRecordingLabelRef.current = null;
+
         const newRecording = {
           id: crypto.randomUUID(),
-          name: `Throw Rec #${recordings.length + 1} (${new Date().toLocaleTimeString()})`,
+          name: label || `Throw Rec #${recordings.length + 1} (${new Date().toLocaleTimeString()})`,
           url,
           blob,
           timestamp: Date.now()
         };
-        
+
         setRecordings(prev => [newRecording, ...prev]);
         setShowRecordingsList(true);
       };
@@ -810,7 +829,13 @@ export function PoseDetector({
 
   // Stop recording
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    // Checks the MediaRecorder's own live state (via the ref) rather than the
+    // `isRecording` React state closed over here - downloadAnalyzedClip calls
+    // this from an event listener registered back when it was first invoked,
+    // by which point a stale `isRecording` (still false from before
+    // startRecording flipped it) would make this a no-op and leave the
+    // recorder running forever.
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       if (recordingTimerRef.current) {
@@ -986,6 +1011,36 @@ export function PoseDetector({
     singleFrameAnalyzeRequestedRef.current = true;
   };
 
+  // Lazily loads the Thunder detector the first time an Analyze sweep runs,
+  // then reuses it after that. Falls back to null (runAnalysis then falls
+  // back to the live Lightning detector) if Thunder fails to load - e.g. no
+  // network reachable for its weights - rather than blocking Analyze
+  // entirely on a model that isn't strictly required.
+  const getAnalysisDetector = async (): Promise<poseDetection.PoseDetector | null> => {
+    if (analysisDetector) return analysisDetector;
+    if (analysisDetectorLoadingRef.current) return analysisDetectorLoadingRef.current;
+
+    const loadPromise = (async () => {
+      try {
+        setLoadingAnalysisModel(true);
+        const model = poseDetection.SupportedModels.MoveNet;
+        const newDetector = await poseDetection.createDetector(model, {
+          modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
+        });
+        setAnalysisDetector(newDetector);
+        return newDetector;
+      } catch (err) {
+        console.error('Failed to load the Thunder model, using the live model for this Analyze sweep instead:', err);
+        return null;
+      } finally {
+        setLoadingAnalysisModel(false);
+        analysisDetectorLoadingRef.current = null;
+      }
+    })();
+    analysisDetectorLoadingRef.current = loadPromise;
+    return loadPromise;
+  };
+
   // Wait for the video to finish seeking to the time we just set, with a safety
   // timeout in case a particular browser/codec never fires 'seeked' for a given frame.
   const waitForSeek = (video: HTMLVideoElement) => new Promise<void>((resolve) => {
@@ -1011,6 +1066,12 @@ export function PoseDetector({
     if (rangeStart === null || rangeEnd === null || rangeEnd <= rangeStart) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Thunder is more accurate than the live loop's Lightning model, and the
+    // sweep below already steps through frames one at a time regardless of
+    // inference speed - falls back to the live detector if Thunder can't be
+    // loaded (see getAnalysisDetector) rather than blocking the sweep.
+    const sweepDetector = (await getAnalysisDetector()) ?? detector;
 
     isAnalyzingRef.current = true;
     setIsAnalyzing(true);
@@ -1048,7 +1109,7 @@ export function PoseDetector({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const poses = await detector.estimatePoses(video);
+      const poses = await sweepDetector.estimatePoses(video);
       if (poses.length > 0) {
         processPoseFrame(poses[0], ctx, t * 1000);
       }
@@ -1097,6 +1158,46 @@ export function PoseDetector({
       isPausedRef.current = true;
       setIsPaused(true);
     }
+  };
+
+  // Plays back exactly the analyzed [rangeStart, rangeEnd] portion and
+  // records it via the same canvas.captureStream() pipeline as the Record
+  // button (see startRecording) - the skeleton overlay and persisted swept
+  // trajectory line are baked in exactly as shown on screen, since detectPose
+  // keeps live-tracking a replayed video once hasAnalyzed is true. The result
+  // lands in Replays like any other recording, with the same download link.
+  const downloadAnalyzedClip = () => {
+    const video = videoRef.current;
+    if (!video || rangeStart === null || rangeEnd === null || rangeEnd <= rangeStart) return;
+    if (isRecording || isCapturingClip || isAnalyzingRef.current) return;
+
+    const start = rangeStart;
+    const end = rangeEnd;
+    setIsCapturingClip(true);
+
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('ended', onTimeUpdate);
+      video.pause();
+      stopRecording();
+      setIsCapturingClip(false);
+    };
+    const onTimeUpdate = () => {
+      if (video.currentTime >= end) finish();
+    };
+
+    video.pause();
+    video.currentTime = start;
+    waitForSeek(video).then(() => {
+      pendingRecordingLabelRef.current = `Analyzed Clip (${formatTime(start)}-${formatTime(end)})`;
+      startRecording();
+      video.addEventListener('timeupdate', onTimeUpdate);
+      video.addEventListener('ended', onTimeUpdate);
+      video.play().catch(finish);
+    });
   };
 
   // Formats a pixel distance (or, for a speed, a pixels/sec rate) from the
@@ -4025,12 +4126,12 @@ export function PoseDetector({
 
                     <button
                       onClick={runAnalysis}
-                      disabled={rangeStart === null || rangeEnd === null || rangeEnd <= rangeStart || isAnalyzing}
+                      disabled={rangeStart === null || rangeEnd === null || rangeEnd <= rangeStart || isAnalyzing || loadingAnalysisModel}
                       className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider rounded border transition-colors bg-sky-600 border-sky-500 text-white hover:bg-sky-500 disabled:opacity-30 disabled:pointer-events-none"
-                      title="Analyze the marked portion of the video and populate the joint metrics and Kinematic Sequence chart"
+                      title="Analyze the marked portion of the video (using the higher-accuracy Thunder model) and populate the joint metrics and Kinematic Sequence chart"
                     >
                       <Sparkles className="w-3 h-3" />
-                      <span>{isAnalyzing ? `Analyzing ${analysisProgress}%` : hasAnalyzed ? 'Re-analyze' : 'Analyze'}</span>
+                      <span>{loadingAnalysisModel ? 'Loading model…' : isAnalyzing ? `Analyzing ${analysisProgress}%` : hasAnalyzed ? 'Re-analyze' : 'Analyze'}</span>
                     </button>
 
                     {(rangeStart !== null || rangeEnd !== null || hasAnalyzed) && (
@@ -4070,6 +4171,15 @@ export function PoseDetector({
                         <p className="text-[8px] text-slate-500 uppercase font-bold tracking-wider">Stride</p>
                         <p className="text-xs font-mono text-violet-300 font-bold leading-none mt-0.5">{formatCalibratedStat(analysisSummary.strideCorePixels, false)}</p>
                       </div>
+                      <button
+                        onClick={downloadAnalyzedClip}
+                        disabled={isCapturingClip || isRecording}
+                        className="flex items-center gap-1 px-2 py-1 text-[9px] font-bold uppercase tracking-wider rounded border transition-colors bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:border-slate-600 disabled:opacity-40 disabled:pointer-events-none"
+                        title="Play back the analyzed range and save it as a downloadable clip (with the pose overlay baked in) to Replays"
+                      >
+                        <Download className="w-3 h-3" />
+                        <span>{isCapturingClip ? 'Capturing…' : 'Save Clip'}</span>
+                      </button>
                     </div>
                   )}
               </div>
