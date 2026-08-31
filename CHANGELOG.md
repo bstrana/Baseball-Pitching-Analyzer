@@ -1,3 +1,14 @@
+## 1.2.21
+
+* Pitch Tracker: the pitch type grid is now its own dockable panel
+  separate from Pitch Calibration, so it can be dragged into the left
+  sidebar, right sidebar, or bottom dock independently.
+* The on-canvas Pitch Stats panel (totals, strike %, per-type
+  breakdown, Target Mode accuracy) is now a draggable, resizable
+  floating panel instead of a fixed canvas overlay - note it no longer
+  gets baked into a downloaded recording or snapshot the way the
+  strike zone and pitch markers still do.
+
 ## 1.2.20
 
 * Removed the WEBCAM/SIDE VIEW source badge from the top-left corner
