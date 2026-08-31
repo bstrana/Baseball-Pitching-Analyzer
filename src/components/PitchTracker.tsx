@@ -228,20 +228,20 @@ function PitchTypeSelectorBase({ currentPitchType, setCurrentPitchType }: PitchT
           return (
             <div key={category}>
               <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest block mb-1">{category}</span>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="flex gap-1">
                 {typesInCategory.map((type) => (
                   <button
                     key={type}
                     onClick={() => setCurrentPitchType(type)}
                     title={type}
-                    className={`py-1.5 px-1 rounded text-center border transition-all ${
+                    className={`flex-1 min-w-0 py-1 px-0.5 rounded text-center border transition-all ${
                       currentPitchType === type
                         ? 'bg-sky-600 border-sky-400 text-white shadow-md shadow-sky-600/20'
                         : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
                     }`}
                   >
-                    <span className="block text-xs font-bold leading-tight">{PITCH_TYPE_INFO[type].abbreviation}</span>
-                    <span className="block text-[9px] font-semibold leading-tight truncate opacity-80">{type}</span>
+                    <span className="block text-[10px] font-bold leading-tight">{PITCH_TYPE_INFO[type].abbreviation}</span>
+                    <span className="block text-[7px] font-semibold leading-tight truncate opacity-80">{type}</span>
                   </button>
                 ))}
               </div>
