@@ -1,3 +1,22 @@
+## 1.2.22
+
+* Pitch type buttons are smaller with one row per category (Fastball,
+  Breaking Ball, Off-Speed) instead of a 3-column grid.
+* Pitch Calibration, Pitch Type Selector, and the Velocity Chart
+  reflow to a more compact layout when dragged into the bottom dock
+  (side-by-side controls, shorter chart) instead of keeping the tall
+  narrow-sidebar layout.
+* Mechanics Tracker: saving/exporting a session now prefers the
+  frozen peak speeds from a completed Analyze sweep over the live
+  readout, since the live snapshot is whatever the feed happened to
+  show at the exact moment Save was clicked.
+* The offline Analyze sweep now uses a separate, more accurate
+  Thunder model (loaded on first use) instead of the live loop's
+  Lightning model.
+* Added a "Save Clip" button that plays back and records exactly the
+  analyzed video range (with the pose overlay baked in) as a
+  downloadable clip in Replays.
+
 ## 1.2.21
 
 * Pitch Tracker: the pitch type grid is now its own dockable panel

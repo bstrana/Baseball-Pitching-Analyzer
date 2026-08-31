@@ -1131,6 +1131,45 @@
       "ts": "Mon, 31 Aug 2026 07:40:21 GMT",
       "publishState": "published",
       "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.2.21"
+    },
+    "1.2.22": {
+      "manifest": {
+        "id": "io.github.bstrana.baseball-pitching-analyzer",
+        "title": "Baseball Pitching Analyzer",
+        "author": "bstrana",
+        "description": "Real-time baseball pitching and swing mechanics analysis, powered by TensorFlow.js pose detection running entirely in the browser. Track pitching and hitting mechanics live from your webcam — all processing happens client-side in the browser. Sign-in via Keycloak is required. Player rosters and saved sessions are stored in a bundled PocketBase backend.",
+        "tagline": "Real-time baseball pitching & swing mechanics analysis",
+        "version": "1.2.22",
+        "manifestVersion": 2,
+        "minBoxVersion": "9.1.0",
+        "website": "https://github.com/bstrana/Baseball-Pitching-Analyzer",
+        "contactEmail": "tomislav.bosanac@gmail.com",
+        "healthCheckPath": "/health",
+        "httpPort": 8000,
+        "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.2.22",
+        "addons": {
+          "localstorage": {}
+        },
+        "icon": "file://appicon.png",
+        "iconUrl": "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/appicon.png",
+        "tags": [
+          "sports",
+          "baseball",
+          "video",
+          "analytics"
+        ],
+        "mediaLinks": [
+          "https://raw.githubusercontent.com/bstrana/Baseball-Pitching-Analyzer/main/appicon.png"
+        ],
+        "changelog": "Pitch type buttons are smaller with one row per category. Pitch Calibration, Pitch Type Selector, and the Velocity Chart reflow to a more compact layout when dragged into the bottom dock. Mechanics Tracker sessions now save/export the peak speeds from a completed Analyze sweep instead of whatever the feed showed at the moment Save was clicked. The Analyze sweep uses a more accurate model (Thunder) than live tracking. A new \"Save Clip\" button records the analyzed video range (with the pose overlay baked in) as a downloadable clip in Replays.",
+        "postInstallMessage": "This app requires Keycloak sign-in. Create a client for this app in your Keycloak realm, then edit /app/data/config.env (KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID) and restart the app from the Cloudron dashboard. Until then, the app shows a 'sign-in not configured' message. Player rosters and saved sessions are stored in a bundled PocketBase backend, scoped per coach via the same Keycloak realm - optionally set PB_ADMIN_EMAIL and PB_ADMIN_PASSWORD in the same config.env to reach its admin dashboard at this app's URL + /pb/_/. To let a coaching staff share a roster, set a matching \"team\" attribute on each coach in Keycloak and add a User Attribute protocol mapper exposing it as a \"team\" claim.",
+        "packagerName": "bstrana",
+        "packagerUrl": "https://github.com/bstrana"
+      },
+      "creationDate": "Mon, 31 Aug 2026 12:50:25 GMT",
+      "ts": "Mon, 31 Aug 2026 12:50:25 GMT",
+      "publishState": "published",
+      "dockerImage": "ghcr.io/bstrana/baseball-pitching-analyzer:1.2.22"
     }
   }
 }
