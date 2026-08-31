@@ -1557,16 +1557,13 @@ export function PoseDetector({
         drawStrikeZoneOverlay(ctx, canvas.width, canvas.height);
         drawPitchesOverlay(ctx, canvas.width, canvas.height);
         drawTargetOverlay(ctx, canvas.width, canvas.height);
-        // Isolated in their own try/catch - detectPose's own try/catch below
-        // wraps every draw call this frame, so an exception in either of
-        // these (before this existed, an unsupported ctx.roundRect() did
-        // exactly this) would otherwise also silently skip the strike
-        // zone/annotations/measurement calls around them.
-        try {
-          drawPitchStatsOverlay(ctx);
-        } catch (e) {
-          console.error('drawPitchStatsOverlay failed:', e);
-        }
+        // Isolated in its own try/catch - detectPose's own try/catch below
+        // wraps every draw call this frame, so an exception here (before
+        // this existed, an unsupported ctx.roundRect() did exactly this)
+        // would otherwise also silently skip the strike zone/annotations/
+        // measurement calls around it. The stats totals/breakdown panel is
+        // a draggable/resizable DOM element now (see statsPanelPosition
+        // below), not drawn here.
         try {
           drawWalkAlertOverlay(ctx);
         } catch (e) {
@@ -2279,16 +2276,12 @@ export function PoseDetector({
     ctx.restore();
   };
 
-  // Draws the Pitches/Strike%/Avg/Max totals, the same breakdown per pitch
-  // type, and the Target Mode accuracy tally directly onto the canvas -
-  // these used to be DOM elements floated over the canvas, which looked
-  // right on screen but never showed up in a recording, since recording
-  // captures only what's actually drawn to the canvas (see startRecording).
-  // Reads from the pitches ref rather than the pitches prop directly since
-  // this runs inside the long-lived animation-frame loop.
-  const drawPitchStatsOverlay = (ctx: CanvasRenderingContext2D) => {
-    const pitches = pitchesRef.current;
-    if (pitches.length === 0) return;
+  // Computes the Pitches/Strike%/Avg/Max totals, the same breakdown per
+  // pitch type, and the Target Mode accuracy tally, for the draggable/
+  // resizable Pitch Stats panel (a DOM element, not canvas-drawn - see
+  // statsPanelPosition below). Pure so it can be called straight from JSX.
+  const getPitchStatsSummary = (pitches: Pitch[]) => {
+    if (pitches.length === 0) return null;
 
     const strikes = pitches.filter(p => p.isStrike).length;
     const strikePct = Math.round((strikes / pitches.length) * 100);
@@ -2319,114 +2312,10 @@ export function PoseDetector({
     const goodMiss = graded.filter(p => p.missResult === 'good-miss').length;
     const badMiss = graded.filter(p => p.missResult === 'bad-miss').length;
 
-    const strikeColor = (pct: number) => (pct >= 60 ? '#34d399' : pct >= 45 ? '#fbbf24' : '#cbd5e1');
-
-    const visible = getVisibleCanvasRect();
-    // A live camera feed's object-fit: cover can crop the canvas down to a
-    // much narrower on-screen window than its full backing-store width
-    // (see getVisibleCanvasRect), so scaling this panel by the full
-    // capture-resolution ratio could make it wider than what's actually
-    // visible. Cap the scale so the panel (plus its margins) always fits
-    // within the visible window, even if that means drawing it a bit
-    // smaller than its "ideal" size in an extreme crop.
-    const visibleWidth = Math.max(0, visible.right - visible.left);
-    const maxScaleForWidth = visibleWidth > 0 ? visibleWidth / (220 + 2 * 12) : Infinity;
-    const scale = Math.min(getOverlayScale(), maxScaleForWidth);
-    const panelW = 220 * scale;
-    const marginX = 12 * scale;
-    const marginTop = 12 * scale;
-    const lineH = 15 * scale;
-    const padX = 10 * scale;
-    const padY = 8 * scale;
-    const sectionGap = 8 * scale;
-
-    const totalLines = 2 + byType.length + (graded.length > 0 ? 1 : 0);
-    const sectionGaps = (byType.length > 0 ? 1 : 0) + (graded.length > 0 ? 1 : 0);
-    const panelH = padY * 2 + totalLines * lineH + sectionGaps * sectionGap;
-
-    const x = visible.right - marginX - panelW;
-    const y = visible.top + marginTop;
-    const leftX = x + padX;
-    const rightX = x + panelW - padX;
-
-    ctx.save();
-    ctx.fillStyle = 'rgba(2, 6, 23, 0.85)';
-    ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)';
-    ctx.lineWidth = 1 * scale;
-    ctx.beginPath();
-    pathRoundedRect(ctx, x, y, panelW, panelH, 8 * scale);
-    ctx.fill();
-    ctx.stroke();
-
-    let cursorY = y + padY + 10 * scale;
-
-    ctx.textBaseline = 'alphabetic';
-    ctx.font = `bold ${11 * scale}px "JetBrains Mono", monospace`;
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(`${pitches.length} PITCHES`, leftX, cursorY);
-    ctx.textAlign = 'right';
-    ctx.fillStyle = strikeColor(strikePct);
-    ctx.fillText(`${strikePct}% K`, rightX, cursorY);
-    cursorY += lineH;
-
-    ctx.font = `${10 * scale}px "JetBrains Mono", monospace`;
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText(`AVG ${avgVelo} MPH`, leftX, cursorY);
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#38bdf8';
-    ctx.fillText(`MAX ${maxVelo} MPH`, rightX, cursorY);
-    cursorY += lineH;
-
-    if (byType.length > 0) {
-      cursorY += sectionGap;
-      ctx.strokeStyle = 'rgba(100, 116, 139, 0.3)';
-      ctx.beginPath();
-      ctx.moveTo(leftX, cursorY - lineH + 3 * scale);
-      ctx.lineTo(rightX, cursorY - lineH + 3 * scale);
-      ctx.stroke();
-
-      byType.forEach((t) => {
-        ctx.font = `${9 * scale}px "Inter", sans-serif`;
-        ctx.textAlign = 'left';
-        ctx.fillStyle = getPitchTypeColor(t.type);
-        ctx.beginPath();
-        ctx.arc(leftX + 3 * scale, cursorY - 3 * scale, 3 * scale, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.fillStyle = '#cbd5e1';
-        ctx.fillText(t.type, leftX + 10 * scale, cursorY);
-
-        ctx.textAlign = 'right';
-        ctx.fillStyle = strikeColor(t.strikePct);
-        ctx.fillText(`${t.count} · ${t.strikePct}% · ${t.avgVelo}/${t.maxVelo}`, rightX, cursorY);
-        cursorY += lineH;
-      });
-    }
-
-    if (graded.length > 0) {
-      cursorY += sectionGap;
-      ctx.strokeStyle = 'rgba(100, 116, 139, 0.3)';
-      ctx.beginPath();
-      ctx.moveTo(leftX, cursorY - lineH + 3 * scale);
-      ctx.lineTo(rightX, cursorY - lineH + 3 * scale);
-      ctx.stroke();
-
-      ctx.font = `bold ${10 * scale}px "JetBrains Mono", monospace`;
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#34d399';
-      ctx.fillText(`ON ${onTarget}`, leftX, cursorY);
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#fbbf24';
-      ctx.fillText(`GOOD ${goodMiss}`, x + panelW / 2, cursorY);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = '#f87171';
-      ctx.fillText(`BAD ${badMiss}`, rightX, cursorY);
-    }
-
-    ctx.textAlign = 'left';
-    ctx.restore();
+    return { total: pitches.length, strikePct, avgVelo, maxVelo, byType, graded: graded.length, onTarget, goodMiss, badMiss };
   };
+
+  const strikePctColor = (pct: number) => (pct >= 60 ? 'text-emerald-400' : pct >= 45 ? 'text-amber-400' : 'text-slate-300');
 
   // Draws a pulsing "N BALLS IN A ROW" alert banner once the most recent
   // pitches - walking backward from the last one thrown - are all balls
@@ -2434,7 +2323,7 @@ export function PoseDetector({
   // the streak continues (in case the coach keeps throwing past 4 rather
   // than resetting between at-bats) and disappears the instant a strike
   // breaks it. Drawn on the canvas, not as a DOM element, so it's baked
-  // into a recording the same way the other pitch stats are.
+  // into a recording (unlike the draggable/resizable Pitch Stats panel).
   const drawWalkAlertOverlay = (ctx: CanvasRenderingContext2D) => {
     const pitches = pitchesRef.current;
     let streak = 0;
@@ -3212,6 +3101,148 @@ export function PoseDetector({
     window.addEventListener('touchend', onEnd);
   };
 
+  // Dragging/resizing the floating Pitch Stats panel (Pitch Tracker mode) -
+  // same handle-drag / corner-resize pattern as the HUD control bar above,
+  // but as a genuine DOM element rather than something drawn on the canvas,
+  // so it can be moved and independently resized (width AND height, via one
+  // corner handle) like any other floating menu.
+  const statsPanelRef = useRef<HTMLDivElement>(null);
+  const statsDragStateRef = useRef<{ startClientX: number; startClientY: number; startLeft: number; startTop: number } | null>(null);
+  const [statsPanelPosition, setStatsPanelPosition] = useState<{ x: number; y: number } | null>(null);
+
+  const STATS_PANEL_WIDTH_MIN = 200;
+  const STATS_PANEL_WIDTH_MAX = 480;
+  const STATS_PANEL_HEIGHT_MIN = 90;
+  const STATS_PANEL_HEIGHT_MAX = 640;
+  const statsResizeStateRef = useRef<{ startClientX: number; startClientY: number; startWidth: number; startHeight: number } | null>(null);
+  const [statsPanelSize, setStatsPanelSize] = useState<{ width: number; height: number } | null>(null);
+
+  const moveStatsPanel = (clientX: number, clientY: number) => {
+    const drag = statsDragStateRef.current;
+    const panel = statsPanelRef.current;
+    const container = containerRef.current;
+    if (!drag || !panel || !container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+
+    const newLeft = Math.max(0, Math.min(
+      drag.startLeft + (clientX - drag.startClientX),
+      containerRect.width - panelRect.width
+    ));
+    const newTop = Math.max(0, Math.min(
+      drag.startTop + (clientY - drag.startClientY),
+      containerRect.height - panelRect.height
+    ));
+
+    setStatsPanelPosition({ x: newLeft, y: newTop });
+  };
+
+  const startStatsPanelDrag = (clientX: number, clientY: number) => {
+    const panel = statsPanelRef.current;
+    const container = containerRef.current;
+    if (!panel || !container) return;
+
+    const panelRect = panel.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+
+    statsDragStateRef.current = {
+      startClientX: clientX,
+      startClientY: clientY,
+      startLeft: panelRect.left - containerRect.left,
+      startTop: panelRect.top - containerRect.top,
+    };
+  };
+
+  const handleStatsHandleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    startStatsPanelDrag(e.clientX, e.clientY);
+
+    const onMove = (ev: MouseEvent) => moveStatsPanel(ev.clientX, ev.clientY);
+    const onUp = () => {
+      statsDragStateRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const handleStatsHandleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 0) return;
+    const touch = e.touches[0];
+    startStatsPanelDrag(touch.clientX, touch.clientY);
+
+    const onMove = (ev: TouchEvent) => {
+      if (ev.touches.length === 0) return;
+      moveStatsPanel(ev.touches[0].clientX, ev.touches[0].clientY);
+    };
+    const onEnd = () => {
+      statsDragStateRef.current = null;
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onEnd);
+  };
+
+  const moveStatsPanelResize = (clientX: number, clientY: number) => {
+    const resize = statsResizeStateRef.current;
+    const container = containerRef.current;
+    if (!resize) return;
+
+    const maxW = container ? Math.min(STATS_PANEL_WIDTH_MAX, container.getBoundingClientRect().width - 16) : STATS_PANEL_WIDTH_MAX;
+    const maxH = container ? Math.min(STATS_PANEL_HEIGHT_MAX, container.getBoundingClientRect().height - 16) : STATS_PANEL_HEIGHT_MAX;
+    const newWidth = Math.max(STATS_PANEL_WIDTH_MIN, Math.min(maxW, resize.startWidth + (clientX - resize.startClientX)));
+    const newHeight = Math.max(STATS_PANEL_HEIGHT_MIN, Math.min(maxH, resize.startHeight + (clientY - resize.startClientY)));
+    setStatsPanelSize({ width: newWidth, height: newHeight });
+  };
+
+  const startStatsPanelResize = (clientX: number, clientY: number) => {
+    const panel = statsPanelRef.current;
+    const rect = panel?.getBoundingClientRect();
+    statsResizeStateRef.current = {
+      startClientX: clientX,
+      startClientY: clientY,
+      startWidth: statsPanelSize?.width ?? rect?.width ?? STATS_PANEL_WIDTH_MIN,
+      startHeight: statsPanelSize?.height ?? rect?.height ?? STATS_PANEL_HEIGHT_MIN,
+    };
+  };
+
+  const handleStatsResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation(); // don't also start a position-drag via the parent handle
+    startStatsPanelResize(e.clientX, e.clientY);
+
+    const onMove = (ev: MouseEvent) => moveStatsPanelResize(ev.clientX, ev.clientY);
+    const onUp = () => {
+      statsResizeStateRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const handleStatsResizeTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 0) return;
+    e.stopPropagation();
+    const touch = e.touches[0];
+    startStatsPanelResize(touch.clientX, touch.clientY);
+
+    const onMove = (ev: TouchEvent) => {
+      if (ev.touches.length === 0) return;
+      moveStatsPanelResize(ev.touches[0].clientX, ev.touches[0].clientY);
+    };
+    const onEnd = () => {
+      statsResizeStateRef.current = null;
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onEnd);
+  };
+
   // Drag and drop video handlers
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -3756,13 +3787,88 @@ export function PoseDetector({
               </button>
             )}
           </div>
-
-          {/* Pitches/Strike%/Avg/Max totals, the per-pitch-type breakdown, and
-              the Target Mode accuracy tally are drawn directly onto the
-              canvas (see drawPitchStatsOverlay) rather than as DOM elements
-              here, so they show up in recordings too. */}
           </div>
           )}
+
+          {/* Pitch Stats panel (Pitch Tracker mode) - Pitches/Strike%/Avg/Max
+              totals, the per-pitch-type breakdown, and the Target Mode
+              accuracy tally. A draggable/resizable DOM panel like the HUD
+              control bar below rather than something drawn on the canvas,
+              so it can be moved and resized independently - the trade-off
+              is it won't be baked into a recording or snapshot the way the
+              strike zone/pitch markers still are. */}
+          {appMode === 'pitching' && (() => {
+            const stats = getPitchStatsSummary(pitches);
+            if (!stats) return null;
+            return (
+              <div
+                ref={statsPanelRef}
+                style={{
+                  ...(statsPanelPosition ? { left: statsPanelPosition.x, top: statsPanelPosition.y, right: 'auto' } : {}),
+                  ...(statsPanelSize ? { width: statsPanelSize.width, height: statsPanelSize.height, right: 'auto' } : {}),
+                }}
+                className={`absolute z-20 flex flex-col bg-slate-950/85 backdrop-blur-md border border-slate-700/50 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.6)] overflow-hidden ${
+                  statsPanelPosition ? 'max-w-[calc(100%-1rem)]' : 'top-3 right-3 w-[220px]'
+                } ${statsPanelSize ? 'max-w-none' : ''}`}
+              >
+                {/* Grip handle - drag anywhere to reposition, double-click/tap to reset */}
+                <div
+                  onMouseDown={handleStatsHandleMouseDown}
+                  onTouchStart={handleStatsHandleTouchStart}
+                  onDoubleClick={() => setStatsPanelPosition(null)}
+                  className="flex items-center justify-center gap-1.5 px-2 py-1 border-b border-slate-800 bg-slate-900/60 cursor-grab active:cursor-grabbing shrink-0"
+                  title="Drag to reposition (double-click to reset)"
+                >
+                  <GripHorizontal className="w-3.5 h-3.5 text-slate-600" />
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Pitch Stats</span>
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-y-auto px-2.5 py-2 font-mono text-[10px]">
+                  <div className="flex items-center justify-between font-bold text-[11px]">
+                    <span className="text-white">{stats.total} PITCHES</span>
+                    <span className={strikePctColor(stats.strikePct)}>{stats.strikePct}% K</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1 text-slate-400">
+                    <span>AVG {stats.avgVelo} MPH</span>
+                    <span className="text-sky-400">MAX {stats.maxVelo} MPH</span>
+                  </div>
+
+                  {stats.byType.length > 0 && (
+                    <div className="mt-1.5 pt-1.5 border-t border-slate-700/40 space-y-1">
+                      {stats.byType.map((t) => (
+                        <div key={t.type} className="flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-1.5 text-slate-300 truncate font-sans text-[9px]">
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: getPitchTypeColor(t.type) }} />
+                            <span className="truncate">{t.type}</span>
+                          </span>
+                          <span className={`shrink-0 ${strikePctColor(t.strikePct)}`}>{t.count} · {t.strikePct}% · {t.avgVelo}/{t.maxVelo}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {stats.graded > 0 && (
+                    <div className="mt-1.5 pt-1.5 border-t border-slate-700/40 flex items-center justify-between font-bold">
+                      <span className="text-emerald-400">ON {stats.onTarget}</span>
+                      <span className="text-amber-400">GOOD {stats.goodMiss}</span>
+                      <span className="text-red-400">BAD {stats.badMiss}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Resize handle - drag to set both width and height, double-click/tap to reset */}
+                <div
+                  onMouseDown={handleStatsResizeMouseDown}
+                  onTouchStart={handleStatsResizeTouchStart}
+                  onDoubleClick={(e) => { e.stopPropagation(); setStatsPanelSize(null); }}
+                  className="absolute bottom-0 right-0 w-5 h-5 flex items-end justify-end p-0.5 text-slate-600 hover:text-slate-300 cursor-nwse-resize touch-none transition-colors"
+                  title="Drag to resize (double-click to reset)"
+                >
+                  <MoveDiagonal2 className="w-3 h-3" />
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Bottom Floating Heads-Up Control Bar - draggable via the grip handle */}
           <div
